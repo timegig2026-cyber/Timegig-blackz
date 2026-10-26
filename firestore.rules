@@ -3,13 +3,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // --- Global Helpers ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && (request.auth.uid == userId || request.auth.token.email == userId);
+    function isOwner(email) {
+      return isSignedIn() && request.auth.token.email == email;
     }
 
     function isValidId(id) {
@@ -24,33 +24,83 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Default catch-all
+    // --- Default Deny ---
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Connection test document
+    // --- Connection Test ---
     match /test/connection {
       allow read: if true;
     }
 
-    // Users collection
+    // --- Users Entity Validation ---
+    function isValidUser(data) {
+      return data.email is string && 
+             data.subscriptionState in ['none', 'user', 'tenant'] &&
+             (data.get('selfieImage', null) == null || data.selfieImage is string) &&
+             (data.get('idDocUrl', null) == null || data.idDocUrl is string) &&
+             (data.get('popDocUrl', null) == null || data.popDocUrl is string);
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if isOwner(userId);
+      allow create: if isSignedIn() && isValidUser(incoming());
+      allow update: if isSignedIn() && isValidUser(incoming()) && (
+        // Allow self-update or master tenant update (timegig2026@gmail.com)
+        isOwner(existing().email) || request.auth.token.email == 'timegig2026@gmail.com'
+      );
+      allow delete: if request.auth.token.email == 'timegig2026@gmail.com';
     }
 
-    // Referrals collection
+    // --- Referrals Entity Validation ---
+    function isValidReferral(data) {
+      return data.email is string && 
+             data.status in ['Pending', 'Approved', 'Rejected'] &&
+             data.activatedPlan in ['user', 'tenant'] &&
+             data.referrerEmail is string;
+    }
+
     match /referrals/{referralId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow create: if isSignedIn() && isValidReferral(incoming());
+      allow update: if isSignedIn() && isValidReferral(incoming()) && (
+        isOwner(existing().email) || isOwner(existing().referrerEmail) || request.auth.token.email == 'timegig2026@gmail.com'
+      );
+      allow delete: if request.auth.token.email == 'timegig2026@gmail.com';
     }
 
-    // Settings collection
+    // --- Gigs Entity Validation ---
+    function isValidGig(data) {
+      return data.title is string && data.title.size() <= 200 &&
+             data.details is string && data.details.size() <= 1000 &&
+             data.creatorEmail is string &&
+             data.status in ['Active', 'Completed', 'Cancelled'];
+    }
+
+    match /gigs/{gigId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidGig(incoming());
+      allow update: if isSignedIn() && isValidGig(incoming()) && (
+        isOwner(existing().creatorEmail) || request.auth.token.email == 'timegig2026@gmail.com'
+      );
+      allow delete: if isSignedIn() && (isOwner(existing().creatorEmail) || request.auth.token.email == 'timegig2026@gmail.com');
+    }
+
+    // --- Settings Entity Validation ---
+    function isValidSetting(data) {
+      return data.tenantEmail is string &&
+             (data.get('userSubFee', null) == null || data.userSubFee is number) &&
+             (data.get('tenantSubFee', null) == null || data.tenantSubFee is number);
+    }
+
     match /settings/{settingId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow create: if isSignedIn() && isValidSetting(incoming());
+      allow update: if isSignedIn() && isValidSetting(incoming()) && (
+        isOwner(existing().tenantEmail) || request.auth.token.email == 'timegig2026@gmail.com'
+      );
+      allow delete: if request.auth.token.email == 'timegig2026@gmail.com';
     }
   }
 }

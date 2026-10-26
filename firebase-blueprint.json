@@ -10,15 +10,20 @@
         "subscriptionState": { "type": "string", "enum": ["none", "user", "tenant"] },
         "selfieImage": { "type": "string", "maxLength": 500000 },
         "idDocName": { "type": "string", "maxLength": 256 },
+        "idDocUrl": { "type": "string", "maxLength": 500000 },
         "popDocName": { "type": "string", "maxLength": 256 },
+        "popDocUrl": { "type": "string", "maxLength": 500000 },
         "isDisabled": { "type": "boolean" },
         "isFrozen": { "type": "boolean" },
+        "isOnline": { "type": "boolean" },
         "referredBy": { "type": "string", "maxLength": 128 },
         "firstName": { "type": "string", "maxLength": 100 },
         "lastName": { "type": "string", "maxLength": 100 },
         "dob": { "type": "string", "maxLength": 20 },
         "contact": { "type": "string", "maxLength": 50 },
         "location": { "type": "string", "maxLength": 200 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
         "educationLevel": { "type": "string", "maxLength": 100 },
         "workingTrade": { "type": "string", "maxLength": 100 },
         "workingTrades": { "type": "array" },
@@ -51,6 +56,27 @@
       },
       "required": ["email", "status", "activatedPlan", "referrerEmail"]
     },
+    "gig": {
+      "title": "Gig",
+      "description": "A gig post created by a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "date": { "type": "string", "maxLength": 50 },
+        "isImmediate": { "type": "boolean" },
+        "budget": { "type": "string", "maxLength": 50 },
+        "location": { "type": "string", "maxLength": 200 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "experience": { "type": "string", "maxLength": 500 },
+        "creatorEmail": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["Active", "Completed", "Cancelled"] }
+      },
+      "required": ["title", "details", "budget", "location", "creatorEmail", "status"]
+    },
     "setting": {
       "title": "Setting",
       "description": "Tenant network settings and bank details",
@@ -75,6 +101,10 @@
     "/referrals/{referralId}": {
       "schema": "#/entities/referral",
       "description": "Referral claims and approvals"
+    },
+    "/gigs/{gigId}": {
+      "schema": "#/entities/gig",
+      "description": "Gig posts live on the map"
     },
     "/settings/{settingId}": {
       "schema": "#/entities/setting",

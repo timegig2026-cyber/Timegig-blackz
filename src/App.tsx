@@ -25,6 +25,7 @@ import {
   setDoc,
   onSnapshot
 } from 'firebase/firestore';
+import { searchLocations, reverseGeocode } from './utils/geocoding';
 import {
   Locate,
   Navigation,
@@ -62,6 +63,7 @@ import {
   Lock,
   Mail,
   Snowflake,
+  Power,
   PowerOff,
   Calendar,
   Clock,
@@ -84,21 +86,42 @@ interface Referral {
   referrerEmail: string;
 }
 
+interface Gig {
+  id: string;
+  title: string;
+  details: string;
+  date: string;
+  isImmediate: boolean;
+  budget: string;
+  location: string;
+  lat: number;
+  lng: number;
+  experience: string;
+  creatorEmail: string;
+  createdAt: string;
+  status: 'Active' | 'Completed' | 'Cancelled';
+}
+
 interface UserAccount {
   email: string;
   password: string;
   subscriptionState: 'none' | 'user' | 'tenant';
   selfieImage: string | null;
   idDocName: string | null;
+  idDocUrl?: string | null;
   popDocName: string | null;
+  popDocUrl?: string | null;
   isDisabled: boolean;
   isFrozen: boolean;
+  isOnline?: boolean;
   referredBy: string | null;
   firstName?: string;
   lastName?: string;
   dob?: string;
   contact?: string;
   location?: string;
+  lat?: number;
+  lng?: number;
   educationLevel?: string;
   workingTrade?: string;
   workingTrades?: string[];
@@ -140,13 +163,32 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState<string>(() => {
     return localStorage.getItem('last_auth_password') || '';
   });
-  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    const savedEmail = localStorage.getItem('current_email');
+    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const user = users.find((u: UserAccount) => u.email === savedEmail);
+    return user ? (user.isOnline ?? false) : false;
+  });
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [feeUpdated, setFeeUpdated] = useState<boolean>(false);
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
   const [popupMessage, setPopupMessage] = useState<{ type: 'congrats' | 'welcome'; text: string } | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(true);
   const [isFirstTimeUser, setIsFirstTimeUser] = useState<boolean>(false);
+
+  // Gig State
+  const [gigs, setGigs] = useState<Gig[]>([]);
+  const [showCreateGigModal, setShowCreateGigModal] = useState<boolean>(false);
+  const [isCreatingGig, setIsCreatingGig] = useState<boolean>(false);
+  const [newGigTitle, setNewGigTitle] = useState<string>('');
+  const [newGigDetails, setNewGigDetails] = useState<string>('');
+  const [newGigDate, setNewGigDate] = useState<string>('');
+  const [newGigIsImmediate, setNewGigIsImmediate] = useState<boolean>(false);
+  const [newGigBudget, setNewGigBudget] = useState<string>('');
+  const [newGigLocation, setNewGigLocation] = useState<string>('');
+  const [newGigExperience, setNewGigExperience] = useState<string>('');
+  const [newGigLat, setNewGigLat] = useState<number | null>(null);
+  const [newGigLng, setNewGigLng] = useState<number | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -175,12 +217,70 @@ export default function App() {
     return user ? user.subscriptionState : 'none';
   });
 
-  // KYC Uploads State
+  // KYC Uploads & Remembered Documents State
   const [selfieImage, setSelfieImage] = useState<string | null>(() => {
     const savedEmail = localStorage.getItem('current_email');
+    if (!savedEmail) return null;
+    const directSaved = localStorage.getItem(`selfie_image_${savedEmail}`);
+    if (directSaved) return directSaved;
     const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
     const user = users.find((u: UserAccount) => u.email === savedEmail);
-    return user ? user.selfieImage : null;
+    if (user?.selfieImage) return user.selfieImage;
+    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
+    const ref = refs.find((r: Referral) => r.email === savedEmail);
+    return ref?.selfieUrl || null;
+  });
+
+  const [idDocUrl, setIdDocUrl] = useState<string | null>(() => {
+    const savedEmail = localStorage.getItem('current_email');
+    if (!savedEmail) return null;
+    const directSaved = localStorage.getItem(`id_doc_url_${savedEmail}`);
+    if (directSaved) return directSaved;
+    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const user = users.find((u: UserAccount) => u.email === savedEmail);
+    if (user?.idDocUrl) return user.idDocUrl;
+    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
+    const ref = refs.find((r: Referral) => r.email === savedEmail);
+    return ref?.idDocUrl || null;
+  });
+
+  const [idDocName, setIdDocName] = useState<string>(() => {
+    const savedEmail = localStorage.getItem('current_email');
+    if (!savedEmail) return '';
+    const directSaved = localStorage.getItem(`id_doc_name_${savedEmail}`);
+    if (directSaved) return directSaved;
+    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const user = users.find((u: UserAccount) => u.email === savedEmail);
+    if (user?.idDocName) return user.idDocName;
+    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
+    const ref = refs.find((r: Referral) => r.email === savedEmail);
+    return ref?.idDocName || '';
+  });
+
+  const [popDocUrl, setPopDocUrl] = useState<string | null>(() => {
+    const savedEmail = localStorage.getItem('current_email');
+    if (!savedEmail) return null;
+    const directSaved = localStorage.getItem(`pop_doc_url_${savedEmail}`);
+    if (directSaved) return directSaved;
+    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const user = users.find((u: UserAccount) => u.email === savedEmail);
+    if (user?.popDocUrl) return user.popDocUrl;
+    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
+    const ref = refs.find((r: Referral) => r.email === savedEmail);
+    return ref?.popDocUrl || null;
+  });
+
+  const [popDocName, setPopDocName] = useState<string>(() => {
+    const savedEmail = localStorage.getItem('current_email');
+    if (!savedEmail) return '';
+    const directSaved = localStorage.getItem(`pop_doc_name_${savedEmail}`);
+    if (directSaved) return directSaved;
+    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
+    const user = users.find((u: UserAccount) => u.email === savedEmail);
+    if (user?.popDocName) return user.popDocName;
+    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
+    const ref = refs.find((r: Referral) => r.email === savedEmail);
+    return ref?.popDocName || '';
   });
 
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
@@ -215,6 +315,25 @@ export default function App() {
   };
 
   const tenantReferralLink = `${window.location.origin}/?ref=${getReferralCode(currentEmail)}`;
+
+  // Determine if current user or referral is already registered / activated
+  const isAlreadyRegistered = Boolean(
+    (subscriptionState && subscriptionState !== 'none') ||
+    (currentEmail && referrals.some(r => r.email === currentEmail)) ||
+    (currentEmail && registeredUsers.some(u => u.email === currentEmail && u.subscriptionState && u.subscriptionState !== 'none'))
+  );
+
+  const handleOpenActivationModal = () => {
+    if (isAlreadyRegistered) {
+      setPopupMessage({
+        type: 'welcome',
+        text: 'Your account is already registered with an active subscription. Registered referrals and users cannot activate another subscription.'
+      });
+      return;
+    }
+    setShowActivationModal(true);
+    setActivationStep('plan');
+  };
 
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -381,16 +500,18 @@ export default function App() {
   // Guided Onboarding for new users
   useEffect(() => {
     if (isFirstTimeUser && authMode === 'authenticated' && !showSplash) {
-      setShowActivationModal(true);
-      setActivationStep('plan');
-      // Guidance message
-      setPopupMessage({ 
-        type: 'congrats', 
-        text: 'Welcome! Let\'s get your account activated. Please follow the steps to complete your KYC and choose a subscription plan.' 
-      });
+      if (!isAlreadyRegistered) {
+        setShowActivationModal(true);
+        setActivationStep('plan');
+        // Guidance message
+        setPopupMessage({ 
+          type: 'congrats', 
+          text: 'Welcome! Let\'s get your account activated. Please follow the steps to complete your KYC and choose a subscription plan.' 
+        });
+      }
       setIsFirstTimeUser(false); // Reset so it doesn't re-trigger
     }
-  }, [isFirstTimeUser, authMode, showSplash]);
+  }, [isFirstTimeUser, authMode, showSplash, isAlreadyRegistered]);
 
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
@@ -429,11 +550,30 @@ export default function App() {
   });
 
   // Helper functions to save to Firestore with error handling
+  const sanitizeForFirestore = (data: any) => {
+    const sanitized = { ...data };
+    Object.keys(sanitized).forEach(key => {
+      if (sanitized[key] === undefined) {
+        sanitized[key] = null;
+      } else if (typeof sanitized[key] === 'object' && sanitized[key] !== null) {
+        if (Array.isArray(sanitized[key])) {
+          sanitized[key] = sanitized[key].map((item: any) => 
+            typeof item === 'object' && item !== null ? sanitizeForFirestore(item) : item
+          );
+        } else {
+          sanitized[key] = sanitizeForFirestore(sanitized[key]);
+        }
+      }
+    });
+    return sanitized;
+  };
+
   const saveUserToFirestore = async (userAcc: UserAccount) => {
     if (!userAcc.email || !auth.currentUser) return;
     const docId = userAcc.email.replace(/[^a-zA-Z0-9_]/g, '_');
     try {
-      await setDoc(doc(db, 'users', docId), userAcc, { merge: true });
+      const sanitizedUser = sanitizeForFirestore(userAcc);
+      await setDoc(doc(db, 'users', docId), sanitizedUser, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `users/${docId}`);
     }
@@ -443,11 +583,41 @@ export default function App() {
     if (!refItem.id || !auth.currentUser) return;
     const docId = refItem.id;
     try {
-      await setDoc(doc(db, 'referrals', docId), refItem, { merge: true });
+      const sanitizedRef = sanitizeForFirestore(refItem);
+      await setDoc(doc(db, 'referrals', docId), sanitizedRef, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `referrals/${docId}`);
     }
   };
+
+  const saveGigToFirestore = async (gigItem: Gig) => {
+    if (!gigItem.id || !auth.currentUser) return;
+    try {
+      const sanitizedGig = sanitizeForFirestore(gigItem);
+      await setDoc(doc(db, 'gigs', gigItem.id), sanitizedGig, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `gigs/${gigItem.id}`);
+    }
+  };
+
+  // Listener for custom events from map popups (e.g. "View Profile" from marker)
+  useEffect(() => {
+    const handleViewSeeker = (e: any) => {
+      const email = e.detail;
+      const seeker = registeredUsers.find(u => u.email === email);
+      if (seeker) {
+        setViewingSeekerProfile({
+          name: `${seeker.firstName} ${seeker.lastName}`,
+          role: seeker.workingTrade || 'Seeker',
+          location: seeker.location || 'Location active',
+          rating: '5.0',
+          email: seeker.email
+        });
+      }
+    };
+    window.addEventListener('viewSeeker', handleViewSeeker as EventListener);
+    return () => window.removeEventListener('viewSeeker', handleViewSeeker as EventListener);
+  }, [registeredUsers]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -505,6 +675,26 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser]);
 
+  // Firebase Firestore Gigs Realtime Listener (only active when authenticated)
+  useEffect(() => {
+    if (!currentUser) return;
+    const gigsCol = collection(db, 'gigs');
+    const unsubscribe = onSnapshot(
+      gigsCol,
+      (snapshot) => {
+        const gigList: Gig[] = [];
+        snapshot.forEach((docSnap) => {
+          gigList.push(docSnap.data() as Gig);
+        });
+        setGigs(gigList);
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'gigs');
+      }
+    );
+    return () => unsubscribe();
+  }, [currentUser]);
+
   // Save registered users & current session to localStorage & sync
   useEffect(() => {
     localStorage.setItem('registered_users', JSON.stringify(registeredUsers));
@@ -524,17 +714,81 @@ export default function App() {
     }
   }, [currentEmail]);
 
-  // Update user profile in registeredUsers when subscriptionState or selfieImage changes
+  // Update user profile in registeredUsers and persist documents whenever documents or subscriptionState change
   useEffect(() => {
     if (!currentEmail) return;
+
+    if (selfieImage) {
+      localStorage.setItem(`selfie_image_${currentEmail}`, selfieImage);
+    }
+    if (idDocUrl) {
+      localStorage.setItem(`id_doc_url_${currentEmail}`, idDocUrl);
+    }
+    if (idDocName) {
+      localStorage.setItem(`id_doc_name_${currentEmail}`, idDocName);
+    }
+    if (popDocUrl) {
+      localStorage.setItem(`pop_doc_url_${currentEmail}`, popDocUrl);
+    }
+    if (popDocName) {
+      localStorage.setItem(`pop_doc_name_${currentEmail}`, popDocName);
+    }
+
     setRegisteredUsers((prev) =>
-      prev.map((u) =>
-        u.email === currentEmail
-          ? { ...u, subscriptionState, selfieImage }
-          : u
-      )
+      prev.map((u) => {
+        if (u.email === currentEmail) {
+          const updated: UserAccount = {
+            ...u,
+            subscriptionState,
+            selfieImage: selfieImage || u.selfieImage,
+            idDocName: idDocName || u.idDocName,
+            idDocUrl: idDocUrl || u.idDocUrl,
+            popDocName: popDocName || u.popDocName,
+            popDocUrl: popDocUrl || u.popDocUrl,
+          };
+          saveUserToFirestore(updated);
+          return updated;
+        }
+        return u;
+      })
     );
-  }, [subscriptionState, selfieImage, currentEmail]);
+  }, [subscriptionState, selfieImage, idDocUrl, idDocName, popDocUrl, popDocName, currentEmail]);
+
+  // Restore remembered selfie, idDoc, and popDoc when currentEmail or records update
+  useEffect(() => {
+    if (!currentEmail) return;
+    const user = registeredUsers.find((u) => u.email === currentEmail);
+    const ref = referrals.find((r) => r.email === currentEmail);
+
+    const savedSelfie = localStorage.getItem(`selfie_image_${currentEmail}`) || user?.selfieImage || ref?.selfieUrl || null;
+    if (savedSelfie && !selfieImage) setSelfieImage(savedSelfie);
+
+    const savedIdUrl = localStorage.getItem(`id_doc_url_${currentEmail}`) || user?.idDocUrl || ref?.idDocUrl || null;
+    if (savedIdUrl && !idDocUrl) setIdDocUrl(savedIdUrl);
+
+    const savedIdName = localStorage.getItem(`id_doc_name_${currentEmail}`) || user?.idDocName || ref?.idDocName || '';
+    if (savedIdName && !idDocName) setIdDocName(savedIdName);
+
+    const savedPopUrl = localStorage.getItem(`pop_doc_url_${currentEmail}`) || user?.popDocUrl || ref?.popDocUrl || null;
+    if (savedPopUrl && !popDocUrl) setPopDocUrl(savedPopUrl);
+
+    const savedPopName = localStorage.getItem(`pop_doc_name_${currentEmail}`) || user?.popDocName || ref?.popDocName || '';
+    if (savedPopName && !popDocName) setPopDocName(savedPopName);
+  }, [currentEmail, registeredUsers, referrals]);
+
+  // Auto-sync subscriptionState if current user is already registered in referrals or registeredUsers
+  useEffect(() => {
+    if (!currentEmail) return;
+    const ref = referrals.find((r) => r.email === currentEmail);
+    if (ref && ref.activatedPlan && subscriptionState === 'none') {
+      setSubscriptionState(ref.activatedPlan);
+      return;
+    }
+    const user = registeredUsers.find((u) => u.email === currentEmail);
+    if (user && user.subscriptionState && user.subscriptionState !== 'none' && subscriptionState === 'none') {
+      setSubscriptionState(user.subscriptionState);
+    }
+  }, [currentEmail, referrals, registeredUsers, subscriptionState]);
 
   // Sync profile edit states with current user data
   useEffect(() => {
@@ -661,28 +915,85 @@ export default function App() {
         mapRef.current = null;
       };
     }
-  }, [authMode, showSplash]);
+  }, [authMode]);
+
+  // Effect to manage markers for seekers and gigs
+  useEffect(() => {
+    if (!mapRef.current || authMode !== 'authenticated') return;
+
+    const seekerMarkers: L.Marker[] = [];
+    const gigMarkers: L.Marker[] = [];
+
+    // Add Online Seeker Markers
+    registeredUsers.forEach(user => {
+      if (user.isOnline && user.lat && user.lng && user.email !== currentEmail) {
+        const marker = L.marker([user.lat, user.lng], {
+          icon: L.divIcon({
+            className: 'seeker-marker',
+            html: `
+              <div style="background: #10b981; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>
+            `,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          })
+        }).addTo(mapRef.current!);
+        
+        marker.bindPopup(`
+          <div style="font-family: sans-serif; padding: 4px;">
+            <b style="font-size: 14px;">${user.firstName} ${user.lastName}</b>
+            <p style="margin: 4px 0; font-size: 12px; color: #666;">Seeker • ${user.workingTrade || 'General'}</p>
+            <button onclick="window.dispatchEvent(new CustomEvent('viewSeeker', {detail: '${user.email}'}))" style="background: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; width: 100%;">View Profile</button>
+          </div>
+        `);
+        seekerMarkers.push(marker);
+      }
+    });
+
+    // Add Active Gig Markers
+    gigs.forEach(gig => {
+      if (gig.status === 'Active') {
+        const marker = L.marker([gig.lat, gig.lng], {
+          icon: L.divIcon({
+            className: 'gig-marker',
+            html: `
+              <div style="background: #2563eb; width: 16px; height: 16px; border-radius: 4px; display: flex; items-center; justify-content: center; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.3);">
+                <span style="color: white; font-size: 10px; font-weight: bold;">G</span>
+              </div>
+            `,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+          })
+        }).addTo(mapRef.current!);
+        
+        marker.bindPopup(`
+          <div style="font-family: sans-serif; min-width: 150px; padding: 4px;">
+            <b style="font-size: 14px; display: block; margin-bottom: 4px;">${gig.title}</b>
+            <div style="font-size: 12px; color: #444; margin-bottom: 8px;">
+              <p style="margin: 2px 0;">💰 Budget: <b>${gig.budget}</b></p>
+              <p style="margin: 2px 0;">🕒 ${gig.isImmediate ? '<b>Immediate!</b>' : gig.date}</p>
+            </div>
+            <p style="font-size: 11px; color: #666; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${gig.details}</p>
+            <button style="background: #2563eb; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: bold; cursor: pointer; width: 100%;">Apply Now</button>
+          </div>
+        `);
+        gigMarkers.push(marker);
+      }
+    });
+
+    return () => {
+      seekerMarkers.forEach(m => m.remove());
+      gigMarkers.forEach(m => m.remove());
+    };
+  }, [registeredUsers, gigs, authMode]);
 
   const fetchLocationName = async (lat: number, lng: number) => {
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-      );
-      const data = await response.json();
-      if (data && data.display_name) {
-        const address = data.address;
-        const shortName =
-          address?.city ||
-          address?.town ||
-          address?.village ||
-          address?.suburb ||
-          address?.county ||
-          address?.state ||
-          data.display_name.split(',')[0];
-        setLocationName(shortName);
+      const name = await reverseGeocode(lat, lng);
+      if (name) {
+        setLocationName(name);
       }
-    } catch (err) {
-      console.warn('Reverse geocoding error:', err);
+    } catch {
+      setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
     }
   };
 
@@ -817,25 +1128,25 @@ export default function App() {
 
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5`
-        );
-        const data = await response.json();
-        if (data && Array.isArray(data)) {
-          setSearchSuggestions(data);
+        const results = await searchLocations(searchQuery, 5, position);
+        if (results && results.length > 0) {
+          setSearchSuggestions(results);
           setShowSuggestions(true);
         }
-      } catch (err) {
-        console.warn('Nominatim search error:', err);
+      } catch {
+        // Graceful non-blocking
       }
-    }, 300);
+    }, 250);
 
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, position]);
 
   const handleSelectLocation = (latStr: string, lonStr: string, displayName: string) => {
     const lat = parseFloat(latStr);
     const lon = parseFloat(lonStr);
+
+    // Automatically take user to location on the map view
+    setActiveView('map');
 
     if (mapRef.current) {
       mapRef.current.setView([lat, lon], 15, { animate: true });
@@ -860,19 +1171,32 @@ export default function App() {
 
     setShowSuggestions(false);
 
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`
+    const lower = searchQuery.trim().toLowerCase();
+    const isNearby = lower.includes('near') || lower.includes('around') || lower.includes('close');
+
+    if (isNearby) {
+      const lat = position?.lat || -26.2041;
+      const lng = position?.lng || 28.0473;
+      handleSelectLocation(
+        lat.toString(),
+        lng.toString(),
+        locationName ? `Nearby Places: ${locationName}` : 'Nearby Places (Your Current Location)'
       );
-      const data = await response.json();
-      if (data && data.length > 0) {
-        const { lat, lon, display_name } = data[0];
+      return;
+    }
+
+    try {
+      const results = await searchLocations(searchQuery, 1, position);
+      if (results && results.length > 0) {
+        const { lat, lon, display_name } = results[0];
         handleSelectLocation(lat, lon, display_name);
       } else {
-        alert('Location not found.');
+        setErrorMessage('Location not found.');
+        setTimeout(() => setErrorMessage(''), 3000);
       }
-    } catch (err) {
-      console.error('Search error:', err);
+    } catch {
+      setErrorMessage('Search temporarily unavailable.');
+      setTimeout(() => setErrorMessage(''), 3000);
     }
   };
 
@@ -919,12 +1243,21 @@ export default function App() {
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isAlreadyRegistered) {
+      setPopupMessage({
+        type: 'welcome',
+        text: 'You are already registered! Registered referrals and users cannot activate a subscription again.'
+      });
+      setShowActivationModal(false);
+      return;
+    }
+
     if (!selfieImage) {
       alert('Please provide your face selfie picture.');
       return;
     }
-    if (!idDocFile) {
-      alert('ID Document is required. Please upload your ID document.');
+    if (!idDocFile && !idDocUrl) {
+      alert('ID Document is required. Please upload or attach your ID document.');
       return;
     }
     const activeReferrer = registeredUsers.find(u => getReferralCode(u.email) === referralCode);
@@ -932,7 +1265,7 @@ export default function App() {
     const isReferral = activeReferrerEmail !== 'direct';
     const isTrial = isReferral && trialDays > 0;
     
-    if (!popFile && !isTrial) {
+    if (!popFile && !popDocUrl && !isTrial) {
       alert('Proof of Payment is required. Please upload your proof of payment document.');
       return;
     }
@@ -949,11 +1282,31 @@ export default function App() {
         });
       };
 
-      const [idDocUrl, rawPopDocUrl] = await Promise.all([
-        fileToDataURL(idDocFile),
-        popFile ? fileToDataURL(popFile) : Promise.resolve(null)
+      const [newIdDocUrl, rawPopDocUrl] = await Promise.all([
+        idDocFile ? fileToDataURL(idDocFile) : Promise.resolve(idDocUrl || ''),
+        popFile ? fileToDataURL(popFile) : Promise.resolve(popDocUrl || null)
       ]);
-      const popDocUrl = rawPopDocUrl || undefined;
+      const finalIdDocUrl = newIdDocUrl || idDocUrl || '';
+      const finalIdDocName = idDocFile?.name || idDocName || 'id_document.pdf';
+      const finalPopDocUrl = rawPopDocUrl || popDocUrl || undefined;
+      const finalPopDocName = popFile?.name || popDocName || 'payment_proof.pdf';
+
+      if (finalIdDocUrl) {
+        setIdDocUrl(finalIdDocUrl);
+        setIdDocName(finalIdDocName);
+        if (currentEmail) {
+          localStorage.setItem(`id_doc_url_${currentEmail}`, finalIdDocUrl);
+          localStorage.setItem(`id_doc_name_${currentEmail}`, finalIdDocName);
+        }
+      }
+      if (finalPopDocUrl) {
+        setPopDocUrl(finalPopDocUrl);
+        setPopDocName(finalPopDocName);
+        if (currentEmail) {
+          localStorage.setItem(`pop_doc_url_${currentEmail}`, finalPopDocUrl);
+          localStorage.setItem(`pop_doc_name_${currentEmail}`, finalPopDocName);
+        }
+      }
 
       setTimeout(() => {
         const referrerEmail = activeReferrerEmail;
@@ -994,10 +1347,10 @@ export default function App() {
           id: `ref-${Date.now()}`,
           email: currentEmail,
           selfieUrl: selfieImage || '',
-          idDocName: idDocFile?.name || 'document.pdf',
-          idDocUrl: idDocUrl,
-          popDocName: popFile?.name || 'payment.pdf',
-          popDocUrl: popDocUrl,
+          idDocName: finalIdDocName,
+          idDocUrl: finalIdDocUrl,
+          popDocName: finalPopDocName,
+          popDocUrl: finalPopDocUrl,
           status: 'Pending',
           date: today.toISOString().split('T')[0],
           activatedPlan: selectedPlan,
@@ -1008,6 +1361,23 @@ export default function App() {
 
         setReferrals((prev) => [newReferral, ...prev]);
         saveReferralToFirestore(newReferral);
+
+        // Update user account with remembered docs
+        setRegisteredUsers((prev) =>
+          prev.map((u) =>
+            u.email === currentEmail
+              ? {
+                  ...u,
+                  subscriptionState: selectedPlan,
+                  selfieImage: selfieImage || u.selfieImage,
+                  idDocName: finalIdDocName,
+                  idDocUrl: finalIdDocUrl,
+                  popDocName: finalPopDocName,
+                  popDocUrl: finalPopDocUrl,
+                }
+              : u
+          )
+        );
         
         setActivationStep('success');
       }, 3000);
@@ -1051,12 +1421,24 @@ export default function App() {
     setSubscriptionState('none');
     setSelfieImage(null);
     setIdDocFile(null);
+    setIdDocUrl(null);
+    setIdDocName('');
     setPopFile(null);
+    setPopDocUrl(null);
+    setPopDocName('');
     setActiveView('map');
     setShowActivationModal(false);
     setActivationStep('plan');
     setUserSubProfit(0.0);
     setTenantSubProfit(0.0);
+
+    if (currentEmail) {
+      localStorage.removeItem(`selfie_image_${currentEmail}`);
+      localStorage.removeItem(`id_doc_url_${currentEmail}`);
+      localStorage.removeItem(`id_doc_name_${currentEmail}`);
+      localStorage.removeItem(`pop_doc_url_${currentEmail}`);
+      localStorage.removeItem(`pop_doc_name_${currentEmail}`);
+    }
     
     const today = new Date();
     const thirtyDaysLater = new Date(today);
@@ -1074,6 +1456,13 @@ export default function App() {
     }
     setAuthMode('login');
     setCurrentEmail('');
+    setSelfieImage(null);
+    setIdDocFile(null);
+    setIdDocUrl(null);
+    setIdDocName('');
+    setPopFile(null);
+    setPopDocUrl(null);
+    setPopDocName('');
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -1128,7 +1517,7 @@ export default function App() {
 
   const handleAutoFillLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      setErrorMessage('Geolocation is not supported by your browser.');
       return;
     }
 
@@ -1136,23 +1525,113 @@ export default function App() {
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-          );
-          const data = await response.json();
-          if (data && data.display_name) {
-            setEditLocation(data.display_name);
-          }
-        } catch (err) {
-          console.warn('Reverse geocoding error:', err);
+          const locName = await reverseGeocode(latitude, longitude);
+          setEditLocation(locName);
+        } catch {
           setEditLocation(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
         }
       },
       (err) => {
-        console.error('Auto-fill location error:', err);
-        alert('Unable to retrieve your location. Please enter it manually.');
+        console.warn('Auto-fill location notice:', err);
+        setErrorMessage('Unable to retrieve your location automatically.');
       }
     );
+  };
+
+  const handleToggleOnline = () => {
+    const newStatus = !isOnline;
+    setIsOnline(newStatus);
+    
+    if (currentEmail) {
+      const user = registeredUsers.find(u => u.email === currentEmail);
+      const updated: UserAccount = user
+        ? { ...user, isOnline: newStatus, lat: position?.lat || user.lat || 0, lng: position?.lng || user.lng || 0, location: locationName || user.location || '' }
+        : {
+            email: currentEmail,
+            password: '',
+            subscriptionState: subscriptionState,
+            selfieImage: selfieImage,
+            idDocName: null,
+            popDocName: null,
+            isDisabled: false,
+            isFrozen: false,
+            referredBy: referralCode,
+            isOnline: newStatus,
+            lat: position?.lat || 0,
+            lng: position?.lng || 0,
+            location: locationName || '',
+            workingTrade: 'Seeker',
+            firstName: currentEmail.split('@')[0],
+            lastName: '',
+          };
+
+      setRegisteredUsers(prev => {
+        const exists = prev.some(u => u.email === currentEmail);
+        return exists ? prev.map(u => u.email === currentEmail ? updated : u) : [...prev, updated];
+      });
+      saveUserToFirestore(updated);
+    }
+  };
+
+  const handleAutoFillGigLocation = () => {
+    if (position) {
+      setNewGigLat(position.lat);
+      setNewGigLng(position.lng);
+      setNewGigLocation(locationName || `${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}`);
+    } else {
+      alert('Unable to retrieve your current location. Please ensure GPS is enabled.');
+    }
+  };
+
+  const handleCreateGigSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreatingGig(true);
+
+    // 2 second delay as requested
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const newGig: Gig = {
+      id: `gig-${Date.now()}`,
+      title: newGigTitle,
+      details: newGigDetails,
+      date: newGigDate,
+      isImmediate: newGigIsImmediate,
+      budget: newGigBudget,
+      location: newGigLocation,
+      lat: newGigLat || position?.lat || 0,
+      lng: newGigLng || position?.lng || 0,
+      experience: newGigExperience,
+      creatorEmail: currentEmail,
+      createdAt: new Date().toISOString(),
+      status: 'Active',
+    };
+
+    setGigs((prev) => [newGig, ...prev]);
+    saveGigToFirestore(newGig);
+    setShowCreateGigModal(false);
+    setIsCreatingGig(false);
+    
+    // Switch to map view and focus on new gig
+    setActiveView('map');
+    if (newGig.lat && newGig.lng && mapRef.current) {
+      mapRef.current.setView([newGig.lat, newGig.lng], 16, { animate: true });
+    }
+
+    // Reset form
+    setNewGigTitle('');
+    setNewGigDetails('');
+    setNewGigDate('');
+    setNewGigIsImmediate(false);
+    setNewGigBudget('');
+    setNewGigLocation('');
+    setNewGigExperience('');
+    setNewGigLat(null);
+    setNewGigLng(null);
+    
+    setPopupMessage({
+      type: 'congrats',
+      text: 'Gig post is now live on the map for all using the app to see!'
+    });
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -1519,8 +1998,7 @@ export default function App() {
 
 
       {/* Main App Content */}
-      {authMode === 'authenticated' && (
-        <div className="relative z-10 w-full h-full flex flex-col">
+      <div className="relative z-10 w-full h-full flex flex-col">
       {/* Access Control Overlay (Blocks use of app until approved) */}
       {!isMaster && (accessStatus === 'pending' || accessStatus === 'rejected' || accessStatus === 'frozen') && (
         <div className="fixed inset-0 z-[60] bg-white/80 backdrop-blur-xl flex items-center justify-center p-6 text-center animate-in fade-in duration-300">
@@ -1595,9 +2073,7 @@ export default function App() {
       {(activeView === 'map' || activeView === 'gigs') && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-xl flex flex-col items-center">
           <form onSubmit={handleSearchSubmit} className="w-full relative flex items-center shadow-2xl">
-            <div className="absolute left-4 text-gray-400 pointer-events-none">
-              <Search className="w-5 h-5" />
-            </div>
+            {/* Removed Search icon as per user request to clean up search box */}
             <input
               type="text"
               value={searchQuery}
@@ -1606,10 +2082,10 @@ export default function App() {
                 if (searchSuggestions.length > 0) setShowSuggestions(true);
               }}
               placeholder="Search area, street, location, province..."
-              className="w-full pl-12 pr-20 py-3.5 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-200 text-gray-900 text-sm md:text-base placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-md transition-all"
+              className="w-full pl-6 pr-20 py-3.5 bg-white/95 backdrop-blur-md rounded-2xl border border-gray-200 text-gray-900 text-sm md:text-base placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-md transition-all"
             />
             <div className="absolute right-4 flex items-center gap-1.5">
-              {searchQuery ? (
+              {searchQuery && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1625,28 +2101,7 @@ export default function App() {
                 >
                   <X className="w-4 h-4" />
                 </button>
-              ) : locationName && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (position && mapRef.current) {
-                      handleSelectLocation(position.lat.toString(), position.lng.toString(), locationName);
-                    }
-                  }}
-                  className="text-blue-600 hover:text-blue-700 p-1 flex items-center gap-1"
-                  title="Use Current Location"
-                >
-                  <MapPin className="w-4 h-4" />
-                </button>
               )}
-              <button
-                type="button"
-                onClick={() => setActiveHelp(helpContent.map)}
-                className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
-                title="Help"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
             </div>
 
             {showSuggestions && searchSuggestions.length > 0 && (
@@ -1682,18 +2137,18 @@ export default function App() {
       {/* Floating Bubble Cluster (Zoom, Satellite toggle, Recenter) - Bottom Right (Shown on map and gigs views) */}
       {(activeView === 'map' || activeView === 'gigs') && (
         <div className="absolute bottom-24 right-6 z-20 flex flex-col items-center gap-3">
-          {(subscriptionState === 'user' || subscriptionState === 'tenant') && (
-            <button
-              onClick={() => alert('Create Post feature coming soon!')}
-              className="w-12 h-12 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-blue-700 transition-all hover:scale-110 active:scale-95 group relative"
-              title="Create a Post"
-            >
-              <PlusCircle className="w-6 h-6" />
-              <span className="absolute right-14 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none font-bold">
-                Create Post
-              </span>
-            </button>
-          )}
+          {/* Create a Post Icon (Smaller compact icon) */}
+          <button
+            onClick={() => setShowCreateGigModal(true)}
+            className="w-10 h-10 bg-blue-600 text-white rounded-2xl shadow-lg flex items-center justify-center hover:bg-blue-700 transition-all hover:scale-110 active:scale-95 group relative border border-white/80"
+            title="Create a Post"
+            aria-label="Create a Post"
+          >
+            <Plus className="w-5 h-5 text-white" />
+            <span className="absolute right-12 bg-gray-900/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-md">
+              Create Post
+            </span>
+          </button>
           <div className="flex flex-col bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200 overflow-hidden divide-y divide-gray-100">
           <button
             onClick={toggleSatellite}
@@ -2232,15 +2687,27 @@ export default function App() {
                 <p className="text-sm text-gray-500">Find active service providers, verified tenants, and seekers in your area</p>
               </div>
               <div className="flex items-center gap-3">
+                {/* On and Off Icon in Seekers Feature */}
                 <button
-                  onClick={() => setIsOnline(!isOnline)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-2xl transition-all shadow-md font-bold text-xs ${
-                    isOnline ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
+                  onClick={handleToggleOnline}
+                  className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl transition-all shadow-md font-bold text-xs border ${
+                    isOnline
+                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-emerald-500/25 ring-2 ring-emerald-500/30'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                   }`}
-                  title={isOnline ? 'You are Online' : 'You are Offline'}
+                  title={isOnline ? 'Click on and off icon to go Offline' : 'Click on and off icon to appear in Seekers Directory'}
                 >
-                  <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}></div>
-                  {isOnline ? 'ONLINE' : 'OFFLINE'}
+                  <div className={`p-1 rounded-full ${isOnline ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                    <Power className={`w-4 h-4 ${isOnline ? 'animate-pulse' : ''}`} />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-80 leading-tight">
+                      {isOnline ? 'ON (READY)' : 'OFF (IDLE)'}
+                    </span>
+                    <span className="text-xs font-black leading-tight">
+                      {isOnline ? 'Ready to get Hired' : 'Appear as Seeker'}
+                    </span>
+                  </div>
                 </button>
                 <button
                   onClick={() => setActiveHelp(helpContent.seekers)}
@@ -2255,30 +2722,93 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                { name: 'Sipho Dlamini', role: 'Verified Tenant & Provider', location: 'Johannesburg, GP', rating: '4.9' },
-                { name: 'Lerato Mokoena', role: 'Active User Seeker', location: 'Pretoria, GP', rating: '4.8' },
-                { name: 'David van Der Merwe', role: 'Local Map Seeker', location: 'Cape Town, WC', rating: '5.0' },
-              ].map((seeker, idx) => (
-                <div key={idx} onClick={() => setViewingSeekerProfile(seeker)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer hover:border-blue-300 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                      {seeker.name.split(' ').map(n => n[0]).join('')}
+            {/* Current User Card when turned ON via on/off icon */}
+            {isOnline && (
+              <div className="bg-gradient-to-r from-emerald-50/90 to-blue-50/90 p-5 rounded-3xl shadow-md border-2 border-emerald-500 flex items-center justify-between relative overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="absolute top-0 right-0 px-3 py-1 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider rounded-bl-2xl shadow-sm flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                  READY TO GET HIRED
+                </div>
+                <div className="flex items-center gap-4">
+                  {selfieImage ? (
+                    <img src={selfieImage} alt="Your profile" className="w-14 h-14 rounded-2xl object-cover shadow-sm border-2 border-emerald-500" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xl shadow-sm border border-emerald-300">
+                      {editFirstName ? editFirstName[0].toUpperCase() : (currentEmail ? currentEmail[0].toUpperCase() : 'U')}
                     </div>
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-gray-900 text-base">
+                        {editFirstName || editLastName ? `${editFirstName} ${editLastName}` : currentEmail}
+                      </h3>
+                      <span className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded-full uppercase tracking-tight">You</span>
+                    </div>
+                    <p className="text-xs text-emerald-700 font-bold mt-0.5">
+                      {editWorkingTrades && editWorkingTrades.length > 0 ? editWorkingTrades.join(', ') : 'Seeker • Ready for Hire'}
+                    </p>
+                    <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-1 font-medium">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600" /> {editLocation || locationName || 'Location active on map'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1.5">
+                  <span className="px-3 py-1.5 bg-emerald-500 text-white font-black text-[10px] rounded-xl shadow-sm flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                    LIVE ON MAP
+                  </span>
+                  <span className="text-[10px] font-bold text-gray-500">Visible to Clients</span>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {registeredUsers.filter(u => u.isOnline && u.email !== currentEmail).map((seeker, idx) => (
+                <div key={idx} onClick={() => setViewingSeekerProfile(seeker)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer hover:border-blue-300 transition-colors group relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-emerald-500 w-2 h-2 rounded-full animate-pulse"></div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {seeker.selfieImage ? (
+                      <img src={seeker.selfieImage} alt={seeker.firstName} className="w-12 h-12 rounded-xl object-cover shadow-sm" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                        {seeker.firstName?.[0] || 'U'}
+                      </div>
+                    )}
                     <div>
-                      <h3 className="font-bold text-gray-900 text-sm">{seeker.name}</h3>
-                      <p className="text-xs text-gray-500">{seeker.role}</p>
+                      <h3 className="font-bold text-gray-900 text-sm">{seeker.firstName} {seeker.lastName}</h3>
+                      <p className="text-xs text-gray-500">{seeker.workingTrade || 'Seeker'}</p>
                       <p className="text-[10px] text-gray-400 flex items-center gap-1 mt-0.5">
-                        <MapPin className="w-3 h-3" /> {seeker.location}
+                        <MapPin className="w-3 h-3" /> {seeker.location || 'Location hidden'}
                       </p>
                     </div>
                   </div>
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl">
-                    ★ {seeker.rating}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 font-bold text-[10px] rounded-lg border border-emerald-100">
+                      LIVE
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-400">★ 5.0</span>
+                  </div>
                 </div>
               ))}
+              {!isOnline && registeredUsers.filter(u => u.isOnline && u.email !== currentEmail).length === 0 && (
+                <div className="col-span-full py-12 text-center bg-white/70 backdrop-blur-sm rounded-3xl border border-dashed border-gray-300 space-y-3">
+                  <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center shadow-inner">
+                    <Power className="w-8 h-8 text-blue-500" />
+                  </div>
+                  <h3 className="text-base font-extrabold text-gray-800">You are currently offline</h3>
+                  <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                    Click the <b>on and off icon</b> above to appear in the Seekers Directory as a seeker ready to get hired!
+                  </p>
+                  <button
+                    onClick={handleToggleOnline}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition-all inline-flex items-center gap-2"
+                  >
+                    <Power className="w-4 h-4" /> Turn ON to Get Hired
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2608,47 +3138,68 @@ export default function App() {
                 <div className="py-2.5 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                    <span className="font-medium text-gray-500">ID Verification</span>
+                    <span className="font-medium text-gray-500">ID Document</span>
                   </div>
-                  <span className="font-bold text-emerald-600 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5" /> Verified
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {idDocUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewingDoc({ url: idDocUrl, title: `ID Document: ${idDocName || 'Saved Document'}` })}
+                        className="text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> View ID ({idDocName ? idDocName.substring(0, 12) + '...' : 'Saved'})
+                      </button>
+                    ) : (
+                      <span className="font-bold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5" /> Verified
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="py-2.5 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <CreditCard className="w-4 h-4 text-emerald-500" />
                     <span className="font-medium text-gray-500">Proof of Payment</span>
                   </div>
-                  <span className="font-bold text-emerald-600 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5" /> Approved
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {popDocUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewingDoc({ url: popDocUrl, title: `Proof of Payment: ${popDocName || 'Saved Slip'}` })}
+                        className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> View Slip ({popDocName ? popDocName.substring(0, 12) + '...' : 'Saved'})
+                      </button>
+                    ) : (
+                      <span className="font-bold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5" /> Approved
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-4">
-              <button
-                onClick={() => {
-                  setShowActivationModal(true);
-                  setActivationStep('plan');
-                }}
-                className="flex-1 min-w-[200px] py-3 bg-white/80 hover:bg-white text-blue-600 border border-blue-200 font-bold rounded-xl text-xs transition-all shadow-sm"
-              >
-                Upgrade Subscription
-              </button>
+              {isAlreadyRegistered ? (
+                <div className="flex-1 min-w-[200px] py-3 px-4 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>Subscription Active ({subscriptionState === 'tenant' ? 'Tenant Sub' : 'User Sub'})</span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleOpenActivationModal}
+                  className="flex-1 min-w-[200px] py-3 bg-white/80 hover:bg-white text-blue-600 border border-blue-200 font-bold rounded-xl text-xs transition-all shadow-sm"
+                >
+                  Activate Subscription
+                </button>
+              )}
               <button
                 onClick={handleToggleDisableAccount}
                 className="py-3 px-4 bg-gray-50/80 hover:bg-gray-100 text-gray-700 border border-gray-200 font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
                 title="Disable Account"
               >
                 <PowerOff className="w-4 h-4 text-gray-500" /> Disable
-              </button>
-              <button
-                onClick={handleResetApp}
-                className="py-3 px-4 bg-red-50/80 hover:bg-red-100 text-red-600 border border-red-200 font-bold rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
-                title="Reset App"
-              >
-                <RotateCcw className="w-4 h-4" /> Reset
               </button>
             </div>
           </div>
@@ -2709,8 +3260,8 @@ export default function App() {
               <span className="text-[10px]">Profile</span>
             </button>
           </>
-        ) : subscriptionState === 'user' ? (
-          // User Sub Activated: Seekers (smaller), GiGs (BIGGER), Profile (smaller)
+        ) : (subscriptionState === 'user' || isAlreadyRegistered) ? (
+          // User Sub Activated or Already Registered Referral/User: Seekers (smaller), GiGs (BIGGER), Profile (smaller)
           <>
             <button
               onClick={() => setActiveView('seekers')}
@@ -2747,10 +3298,7 @@ export default function App() {
           // Not Activated / New User: ONLY the Activation feature icon (bigger, no box)
           <div className="flex items-center justify-center w-full">
             <button
-              onClick={() => {
-                setShowActivationModal(true);
-                setActivationStep('plan');
-              }}
+              onClick={handleOpenActivationModal}
               className="flex flex-col items-center gap-1 group focus:outline-none text-blue-600 font-bold"
               title="Activation"
             >
@@ -2774,10 +3322,14 @@ export default function App() {
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">Account Activation & KYC</h2>
                   <p className="text-xs text-gray-500">
-                    {activationStep === 'plan' && 'Step 1 of 2: Choose your subscription'}
-                    {activationStep === 'kyc' && 'Step 2 of 2: Verification & Documents (Required)'}
-                    {activationStep === 'loading' && 'Processing Activation...'}
-                    {activationStep === 'success' && 'Congratulations!'}
+                    {isAlreadyRegistered ? 'Status: Active Registration' : (
+                      <>
+                        {activationStep === 'plan' && 'Step 1 of 2: Choose your subscription'}
+                        {activationStep === 'kyc' && 'Step 2 of 2: Verification & Documents (Required)'}
+                        {activationStep === 'loading' && 'Processing Activation...'}
+                        {activationStep === 'success' && 'Congratulations!'}
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -2807,7 +3359,33 @@ export default function App() {
 
             {/* Modal Body */}
             <div className="p-6 max-h-[80vh] overflow-y-auto">
-              {activationStep === 'plan' && (() => {
+              {isAlreadyRegistered ? (
+                <div className="py-8 flex flex-col items-center text-center space-y-4 animate-in fade-in duration-300">
+                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shadow-lg">
+                    <CheckCircle className="w-8 h-8" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-xl font-extrabold text-gray-900">Subscription Already Active</h3>
+                    <p className="text-xs font-semibold text-emerald-600">
+                      You are already registered ({subscriptionState === 'tenant' ? 'Tenant Sub' : 'User Sub'}).
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 max-w-xs leading-relaxed">
+                    Registered referrals and members already have active platform privileges and cannot activate a subscription again.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowActivationModal(false);
+                      stopCamera();
+                    }}
+                    className="mt-3 px-6 py-2.5 bg-gray-900 hover:bg-black text-white font-bold rounded-xl text-xs shadow-md transition-all"
+                  >
+                    Close Window
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {activationStep === 'plan' && (() => {
                 // Determine fees based on referrer's settings
                 const referrer = registeredUsers.find(u => getReferralCode(u.email) === referralCode);
                 const referrerEmail = referrer ? referrer.email : 'timegig2026@gmail.com';
@@ -2991,30 +3569,52 @@ export default function App() {
                   <div>
                     <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center justify-between">
                       <span>2. ID Document (Required) <span className="text-red-500">*</span></span>
-                      {idDocFile && <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Attached</span>}
+                      {(idDocFile || idDocUrl) && <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> {idDocFile ? 'Attached' : 'Remembered'}</span>}
                     </label>
-                    <label className={`flex items-center justify-between border-2 border-dashed rounded-2xl p-4 transition-all cursor-pointer ${idDocFile ? 'border-emerald-500 bg-emerald-50/30' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/50'}`}>
+                    <label className={`flex items-center justify-between border-2 border-dashed rounded-2xl p-4 transition-all cursor-pointer ${(idDocFile || idDocUrl) ? 'border-emerald-500 bg-emerald-50/30' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/50'}`}>
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${idDocFile ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                        <div className={`p-2 rounded-lg ${(idDocFile || idDocUrl) ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
                           <Upload className="w-5 h-5" />
                         </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-800">
-                            {idDocFile ? idDocFile.name : 'Upload ID card or passport (Required)'}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800 truncate">
+                            {idDocFile ? idDocFile.name : (idDocName || 'Upload ID card or passport (Required)')}
                           </p>
                           <p className="text-[10px] text-gray-500">PDF, PNG, JPG up to 10MB</p>
                         </div>
                       </div>
-                      <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${idDocFile ? 'text-emerald-700 bg-emerald-100' : 'text-blue-600 bg-blue-50'}`}>
-                        {idDocFile ? 'Change' : 'Browse'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {idDocUrl && !idDocFile && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setViewingDoc({ url: idDocUrl, title: `ID Document: ${idDocName || 'Saved'}` });
+                            }}
+                            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${(idDocFile || idDocUrl) ? 'text-emerald-700 bg-emerald-100' : 'text-blue-600 bg-blue-50'}`}>
+                          {(idDocFile || idDocUrl) ? 'Change' : 'Browse'}
+                        </span>
+                      </div>
                       <input
                         type="file"
                         accept="image/*,.pdf"
                         required
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
-                            setIdDocFile(e.target.files[0]);
+                            const file = e.target.files[0];
+                            setIdDocFile(file);
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const url = ev.target?.result as string;
+                              setIdDocUrl(url);
+                              setIdDocName(file.name);
+                            };
+                            reader.readAsDataURL(file);
                           }
                         }}
                         className="hidden"
@@ -3026,30 +3626,52 @@ export default function App() {
                   <div>
                     <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center justify-between">
                       <span>3. Proof of Payment Document (Required) <span className="text-red-500">*</span></span>
-                      {popFile && <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Attached</span>}
+                      {(popFile || popDocUrl) && <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> {popFile ? 'Attached' : 'Remembered'}</span>}
                     </label>
-                    <label className={`flex items-center justify-between border-2 border-dashed rounded-2xl p-4 transition-all cursor-pointer ${popFile ? 'border-emerald-500 bg-emerald-50/30' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/50'}`}>
+                    <label className={`flex items-center justify-between border-2 border-dashed rounded-2xl p-4 transition-all cursor-pointer ${(popFile || popDocUrl) ? 'border-emerald-500 bg-emerald-50/30' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/50'}`}>
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${popFile ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                        <div className={`p-2 rounded-lg ${(popFile || popDocUrl) ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-100 text-emerald-600'}`}>
                           <CreditCard className="w-5 h-5" />
                         </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-800">
-                            {popFile ? popFile.name : 'Upload proof of payment slip (Required)'}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800 truncate">
+                            {popFile ? popFile.name : (popDocName || 'Upload proof of payment slip (Required)')}
                           </p>
                           <p className="text-[10px] text-gray-500">PDF, PNG, JPG up to 10MB</p>
                         </div>
                       </div>
-                      <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${popFile ? 'text-emerald-700 bg-emerald-100' : 'text-emerald-600 bg-emerald-50'}`}>
-                        {popFile ? 'Change' : 'Browse'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {popDocUrl && !popFile && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setViewingDoc({ url: popDocUrl, title: `Proof of Payment: ${popDocName || 'Saved'}` });
+                            }}
+                            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${(popFile || popDocUrl) ? 'text-emerald-700 bg-emerald-100' : 'text-emerald-600 bg-emerald-50'}`}>
+                          {(popFile || popDocUrl) ? 'Change' : 'Browse'}
+                        </span>
+                      </div>
                       <input
                         type="file"
                         accept="image/*,.pdf"
                         required
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
-                            setPopFile(e.target.files[0]);
+                            const file = e.target.files[0];
+                            setPopFile(file);
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const url = ev.target?.result as string;
+                              setPopDocUrl(url);
+                              setPopDocName(file.name);
+                            };
+                            reader.readAsDataURL(file);
                           }
                         }}
                         className="hidden"
@@ -3118,6 +3740,8 @@ export default function App() {
                   </button>
                 </div>
               )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -3152,8 +3776,6 @@ export default function App() {
         </div>
       )}
 
-        </div>
-      )}
 
       {/* Help Modal Overlay */}
       {activeHelp && (
@@ -3222,6 +3844,178 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Create Gig Modal (Full Screen) */}
+      {showCreateGigModal && (
+        <div className="fixed inset-0 z-[120] bg-white animate-in slide-in-from-bottom duration-300 flex flex-col">
+          <div className="safe-p-top px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+            <button
+              onClick={() => setShowCreateGigModal(false)}
+              className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <h2 className="text-lg font-black text-gray-900 uppercase tracking-tight">Post a New Gig</h2>
+            <div className="w-10" /> {/* Spacer */}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 bg-gray-50/30 relative">
+            {/* 2-second Circle Loading Overlay */}
+            {isCreatingGig && (
+              <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+                <div className="relative flex items-center justify-center mb-6">
+                  <div className="w-24 h-24 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                  <div className="absolute">
+                    <MapPin className="w-10 h-10 text-blue-600 animate-pulse" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-extrabold text-gray-900">Publishing Gig Post...</h3>
+                <p className="text-xs text-gray-500 mt-2 max-w-xs font-medium">
+                  Broadcasting live onto the map for all users and seekers to see!
+                </p>
+                <div className="mt-4 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-wider border border-blue-100">
+                  Syncing Live Coordinates
+                </div>
+              </div>
+            )}
+            <div className="max-w-2xl mx-auto">
+              <form onSubmit={handleCreateGigSubmit} className="space-y-6">
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Gig Title</label>
+                    <input
+                      type="text"
+                      required
+                      value={newGigTitle}
+                      onChange={(e) => setNewGigTitle(e.target.value)}
+                      placeholder="e.g. Garden Maintenance Needed"
+                      className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Gig Details</label>
+                    <textarea
+                      required
+                      rows={4}
+                      value={newGigDetails}
+                      onChange={(e) => setNewGigDetails(e.target.value)}
+                      placeholder="Describe the task and requirements..."
+                      className="w-full px-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all resize-none"
+                    ></textarea>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5 ml-1">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Time & Date</label>
+                        <button
+                          type="button"
+                          onClick={() => setNewGigIsImmediate(!newGigIsImmediate)}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${newGigIsImmediate ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'}`}
+                        >
+                          {newGigIsImmediate ? 'IMMEDIATE ACTIVE' : 'MARK IMMEDIATE'}
+                        </button>
+                      </div>
+                      {!newGigIsImmediate ? (
+                        <div className="relative flex items-center">
+                          <Calendar className="absolute left-4 w-5 h-5 text-gray-400" />
+                          <input
+                            type="datetime-local"
+                            required
+                            value={newGigDate}
+                            onChange={(e) => setNewGigDate(e.target.value)}
+                            className="w-full pl-12 pr-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3 px-5 py-4 bg-orange-50 border border-orange-100 rounded-2xl text-orange-700">
+                          <Zap className="w-5 h-5 fill-current" />
+                          <span className="text-sm font-bold uppercase tracking-tight">Immediate Assistance Requested</span>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Budget (ZAR)</label>
+                      <div className="relative flex items-center">
+                        <DollarSign className="absolute left-4 w-5 h-5 text-gray-400" />
+                        <input
+                          type="text"
+                          required
+                          value={newGigBudget}
+                          onChange={(e) => setNewGigBudget(e.target.value)}
+                          placeholder="e.g. R500"
+                          className="w-full pl-12 pr-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5 ml-1">
+                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Location</label>
+                      <button
+                        type="button"
+                        onClick={handleAutoFillGigLocation}
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                      >
+                        <Locate className="w-3 h-3" /> Auto-fill Current
+                      </button>
+                    </div>
+                    <div className="relative flex items-center">
+                      <MapPin className="absolute left-4 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        required
+                        value={newGigLocation}
+                        onChange={(e) => setNewGigLocation(e.target.value)}
+                        placeholder="Street, City, Province"
+                        className="w-full pl-12 pr-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Experience Needed</label>
+                    <div className="relative flex items-center">
+                      <Award className="absolute left-4 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        required
+                        value={newGigExperience}
+                        onChange={(e) => setNewGigExperience(e.target.value)}
+                        placeholder="e.g. 2+ years plumbing experience"
+                        className="w-full pl-12 pr-5 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    disabled={isCreatingGig}
+                    className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-3xl text-sm shadow-2xl shadow-blue-500/30 transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {isCreatingGig ? (
+                      <>
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                        <span>CREATING POST...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        <span>CREATE GIG POST</span>
+                      </>
+                    )}
+                  </button>
+                  <p className="text-center text-[10px] text-gray-400 font-bold uppercase mt-4 tracking-tighter">Your gig will be live on the map instantly</p>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  </div>
   );
 }
