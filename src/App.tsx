@@ -2370,7 +2370,7 @@ export default function App() {
                       <div>
                         <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Working Trades (Select multiple)</label>
                         <div className="grid grid-cols-2 gap-2 mt-2">
-                          {["Electrician", "Plumber", "Carpenter", "Painter", "Gardener", "Cleaner", "Delivery", "Handyman", "Tutor", "Chef/Cook", "Driver", "Tech Support"].map(trade => (
+                          {["Electrician", "Plumber", "Carpenter", "Painter", "Gardener", "Cleaner", "Delivery", "Handyman", "Tutor", "Chef/Cook", "Driver", "Tech Support", "Construction", "Security", "Watering", "Catering", "Mowing", "Housekeeping", "Mechanic", "Babysitter", "Pet Sitter", "Photographer", "Videographer", "Graphic Designer", "Web Developer", "Writer/Editor"].map(trade => (
                             <label key={trade} className="flex items-center gap-2 text-xs">
                               <input
                                 type="checkbox"
