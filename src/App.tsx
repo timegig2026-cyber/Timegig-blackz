@@ -33,6 +33,7 @@ import {
   RefreshCw,
   X,
   Plus,
+  PlusCircle,
   Minus,
   Layers,
   Zap,
@@ -139,6 +140,7 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState<string>(() => {
     return localStorage.getItem('last_auth_password') || '';
   });
+  const [isOnline, setIsOnline] = useState<boolean>(true);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [feeUpdated, setFeeUpdated] = useState<boolean>(false);
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
@@ -1679,7 +1681,20 @@ export default function App() {
 
       {/* Floating Bubble Cluster (Zoom, Satellite toggle, Recenter) - Bottom Right (Shown on map and gigs views) */}
       {(activeView === 'map' || activeView === 'gigs') && (
-        <div className="absolute bottom-24 right-6 z-20 flex flex-col bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200 overflow-hidden divide-y divide-gray-100">
+        <div className="absolute bottom-24 right-6 z-20 flex flex-col items-center gap-3">
+          {(subscriptionState === 'user' || subscriptionState === 'tenant') && (
+            <button
+              onClick={() => alert('Create Post feature coming soon!')}
+              className="w-12 h-12 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-blue-700 transition-all hover:scale-110 active:scale-95 group relative"
+              title="Create a Post"
+            >
+              <PlusCircle className="w-6 h-6" />
+              <span className="absolute right-14 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none font-bold">
+                Create Post
+              </span>
+            </button>
+          )}
+          <div className="flex flex-col bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-200 overflow-hidden divide-y divide-gray-100">
           <button
             onClick={toggleSatellite}
             className={`p-3 transition-colors flex items-center justify-center ${
@@ -1716,6 +1731,7 @@ export default function App() {
           >
             <Locate className="w-5 h-5" />
           </button>
+          </div>
         </div>
       )}
 
@@ -2216,6 +2232,16 @@ export default function App() {
                 <p className="text-sm text-gray-500">Find active service providers, verified tenants, and seekers in your area</p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsOnline(!isOnline)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-2xl transition-all shadow-md font-bold text-xs ${
+                    isOnline ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
+                  }`}
+                  title={isOnline ? 'You are Online' : 'You are Offline'}
+                >
+                  <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                  {isOnline ? 'ONLINE' : 'OFFLINE'}
+                </button>
                 <button
                   onClick={() => setActiveHelp(helpContent.seekers)}
                   className="p-3 bg-blue-100 text-blue-600 rounded-2xl hover:bg-blue-200 transition-colors shadow-md"
