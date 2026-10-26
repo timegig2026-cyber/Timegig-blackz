@@ -45,11 +45,20 @@ app.post('/api/detect-face', async (req, res) => {
 
     const prompt = "Analyze this image. Does it contain a clear, identifiable human face (front-facing selfie)? Return faceDetected: true only if it is a clear face photo. Do not accept logos, objects, ID documents, or full-body photos. Return a JSON object: { \"faceDetected\": boolean, \"reason\": \"string\" }";
 
-    console.log(`Detecting face with model: gemini-1.5-flash, mimeType: ${mimeType}`);
+    console.log(`Detecting face with model: gemini-3.8-flash, mimeType: ${mimeType}`);
 
-    const model = ai.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
+    const result = await ai.models.generateContent({
+      model: "gemini-3.8-flash",
+      contents: [
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data,
+          },
+        },
+        { text: prompt },
+      ],
+      config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -62,17 +71,7 @@ app.post('/api/detect-face', async (req, res) => {
       },
     });
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: mimeType,
-          data: base64Data,
-        },
-      },
-      prompt,
-    ]);
-
-    const responseText = result.response.text();
+    const responseText = result.text;
     console.log('AI Response:', responseText);
 
     if (!responseText) {

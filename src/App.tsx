@@ -204,7 +204,6 @@ export default function App() {
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
   const [popupMessage, setPopupMessage] = useState<{ type: 'congrats' | 'welcome'; text: string } | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(true);
-  const [isFirstTimeUser, setIsFirstTimeUser] = useState<boolean>(false);
 
   // Gig State
   const [gigs, setGigs] = useState<Gig[]>([]);
@@ -594,22 +593,6 @@ export default function App() {
     }
   }, [branchCode, currentEmail]);
 
-  // Guided Onboarding for new users
-  useEffect(() => {
-    if (isFirstTimeUser && authMode === 'authenticated' && !showSplash) {
-      if (!isAlreadyRegistered) {
-        setShowActivationModal(true);
-        setActivationStep('plan');
-        // Guidance message
-        setPopupMessage({ 
-          type: 'congrats', 
-          text: 'Welcome! Let\'s get your account activated. Please follow the steps to complete your KYC and choose a subscription plan.' 
-        });
-      }
-      setIsFirstTimeUser(false); // Reset so it doesn't re-trigger
-    }
-  }, [isFirstTimeUser, authMode, showSplash, isAlreadyRegistered]);
-
   // Custom pulsing location icon using Leaflet divIcon
   const userIcon = L.divIcon({
     className: 'custom-user-location-marker',
@@ -795,7 +778,20 @@ export default function App() {
 
   // Save registered users & current session to localStorage & sync
   useEffect(() => {
-    localStorage.setItem('registered_users', JSON.stringify(registeredUsers));
+    try {
+      const sanitizedUsers = registeredUsers.map(user => ({
+        ...user,
+        selfieImage: null, // Don't store in localStorage
+        idDocUrl: null,    // Don't store in localStorage
+        popDocUrl: null    // Don't store in localStorage
+      }));
+      localStorage.setItem('registered_users', JSON.stringify(sanitizedUsers));
+    } catch (e) {
+      console.error('Failed to save to localStorage:', e);
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        alert('Storage limit reached. Please clear some data or contact support.');
+      }
+    }
   }, [registeredUsers]);
 
   useEffect(() => {
@@ -1365,7 +1361,8 @@ export default function App() {
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg');
         
-        const faceOk = await detectFace(dataUrl);
+        // const faceOk = await detectFace(dataUrl); // Face scan removed
+        const faceOk = true;
         if (faceOk) {
           setSelfieImage(dataUrl);
           stopCamera();
@@ -1802,7 +1799,6 @@ export default function App() {
     
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
-    setIsFirstTimeUser(true); // Trigger guidance
     setPopupMessage({ type: 'congrats', text: 'Congratulations! Your account has been successfully created.' });
   };
 
@@ -1839,7 +1835,7 @@ export default function App() {
 
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
-    setPopupMessage({ type: 'welcome', text: `Welcome Back, ${authEmail || 'User'}!` });
+    // setPopupMessage({ type: 'welcome', text: `Welcome Back, ${authEmail || 'User'}!` });
   };
 
   const handleUpdateReferralStatus = (id: string, status: 'Approved' | 'Rejected') => {
@@ -1868,7 +1864,7 @@ export default function App() {
           email: user.email,
           password: '',
           subscriptionState: 'none',
-          selfieImage: user.photoURL || null,
+          selfieImage: null,
           idDocName: null,
           popDocName: null,
           isDisabled: false,
@@ -2577,27 +2573,27 @@ export default function App() {
 
       {/* Full Screen Referrals Review Modal */}
       {showReferralsModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex flex-col p-2 md:p-4 overflow-y-auto">
-          <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/40 w-full max-w-4xl mx-auto my-auto overflow-hidden flex flex-col max-h-[95vh]">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
-              <div className="flex items-center gap-1.5">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex flex-col p-1 overflow-hidden">
+          <div className="bg-white/90 backdrop-blur-xl shadow-2xl border border-white/40 w-full h-full overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-1">
                 <div className="p-1 bg-blue-100 text-blue-600 rounded-md">
-                  <Users className="w-4 h-4" />
+                  <Users className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-gray-900 leading-tight">Referrals & KYC Verification</h2>
-                  <p className="text-[9px] text-gray-500 leading-tight">Review email, selfie, ID, and payment status</p>
+                  <h2 className="text-xs font-bold text-gray-900 leading-tight">Referrals & KYC Verification</h2>
+                  <p className="text-[8px] text-gray-500 leading-tight">Review email, selfie, ID, and payment status</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowReferralsModal(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-4 flex-1">
+            <div className="p-2 overflow-y-auto space-y-2 flex-1">
               {(() => {
                 const myCode = getReferralCode(currentEmail);
                 const isMaster = currentEmail === 'timegig2026@gmail.com';
@@ -2615,10 +2611,9 @@ export default function App() {
 
                 return (
                   <>
-                    {/* Stats Display */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                       {isMaster ? (
-                         <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 shadow-sm">
+                         <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 shadow-sm md:col-span-3">
                            <h4 className="text-xs font-bold text-purple-900 mb-2">Master Tenant Overview</h4>
                            <div className="text-sm">Total Referrals: {relevantUsers.length}</div>
                            <div className="text-sm">Total Monthly Profit: R{referrals.reduce((sum, r) => sum + (r.status === 'Approved' ? (r.activatedPlan === 'user' ? userSubFee : tenantSubFee) : 0), 0).toFixed(2)}</div>
@@ -2639,6 +2634,13 @@ export default function App() {
                               <div className="bg-blue-600 h-full transition-all" style={{ width: `${Math.min((userCount/userLimit)*100, 100)}%` }} />
                             </div>
                           </div>
+                          <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 flex flex-col items-center">
+                            <span className="text-[9px] font-bold text-yellow-600 uppercase">Total Monthly Profit</span>
+                            <div className="text-lg font-black text-yellow-800">
+                              R{referrals.filter(r => relevantUsers.some(u => u.email === r.email) && r.status === 'Approved')
+                                .reduce((sum, r) => sum + (r.activatedPlan === 'user' ? userSubFee : tenantSubFee), 0).toFixed(2)}
+                            </div>
+                          </div>
                         </>
                       )}
                     </div>
@@ -2652,30 +2654,29 @@ export default function App() {
                       return (
                         <div
                           key={user.email}
-                          className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:shadow-md transition-all"
+                          className="bg-white rounded-lg border border-gray-100 p-2 shadow-none flex flex-col md:flex-row items-start md:items-center justify-between gap-2 hover:bg-gray-50 transition-all"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             {refData?.selfieUrl ? (
                               <img
                                 src={refData.selfieUrl}
                                 alt="Selfie"
                                 onClick={() => setViewingDoc({ url: refData.selfieUrl, title: `Selfie: ${refData.email}` })}
-                                className={`w-12 h-12 rounded-xl object-cover border-2 shadow-sm flex-shrink-0 cursor-pointer hover:scale-105 transition-transform ${refData.isFrozen ? 'border-blue-300 grayscale' : 'border-blue-500'}`}
+                                className={`w-8 h-8 rounded-lg object-cover border border-gray-200 flex-shrink-0 cursor-pointer hover:scale-105 transition-transform ${refData.isFrozen ? 'border-blue-300 grayscale' : 'border-blue-500'}`}
                                 title="Click to view full selfie"
                               />
                             ) : (
-                              <div className="w-12 h-12 rounded-xl bg-red-50 text-red-500 flex flex-col items-center justify-center border-2 border-dashed border-red-100 flex-shrink-0 animate-pulse">
-                                <AlertCircle className="w-5 h-5" />
-                                <span className="text-[6px] font-black uppercase mt-0.5">No Selfie</span>
+                              <div className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex flex-col items-center justify-center border border-dashed border-red-100 flex-shrink-0">
+                                <AlertCircle className="w-3 h-3" />
                               </div>
                             )}
                             <div>
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-gray-900 text-sm">{user.email}</h3>
+                              <div className="flex items-center gap-1">
+                                <h3 className="font-bold text-gray-900 text-[10px]">{user.email}</h3>
                                 {refData ? (
                                   <>
                                     <span
-                                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                      className={`px-1.5 py-0 rounded-full text-[7px] font-bold ${
                                         refData.status === 'Approved'
                                           ? 'bg-emerald-100 text-emerald-800'
                                           : refData.status === 'Rejected'
@@ -2685,100 +2686,51 @@ export default function App() {
                                     >
                                       {refData.status}
                                     </span>
-                                    {refData.isFrozen && (
-                                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1">
-                                        <Snowflake className="w-2.5 h-2.5" /> Frozen
-                                      </span>
-                                    )}
                                   </>
                                 ) : (
-                                  <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[9px] font-bold border border-gray-200">
-                                    Awaiting KYC
+                                  <span className="px-1.5 py-0 bg-gray-100 text-gray-500 rounded-full text-[7px] font-bold border border-gray-200">
+                                    KYC
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className={`px-1.5 py-0.5 rounded border text-[9px] font-semibold ${user.subscriptionState === 'tenant' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : user.subscriptionState === 'user' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
-                                  {user.subscriptionState === 'tenant' ? 'Tenant Sub' : user.subscriptionState === 'user' ? 'User Sub' : 'No Sub'}
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className={`px-1 py-0 rounded border text-[7px] font-semibold ${user.subscriptionState === 'tenant' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : user.subscriptionState === 'user' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                                  {user.subscriptionState === 'tenant' ? 'T' : user.subscriptionState === 'user' ? 'U' : '-'}
                                 </span>
-                                {refData && (
-                                  <div className="flex items-center gap-1 text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">
-                                    <Clock className="w-2.5 h-2.5" /> Expiry: {refData.expiryDate}
-                                  </div>
-                                )}
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-1">
                             {refData ? (
                               <>
-                                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2 py-1.5 rounded-lg text-[10px] text-gray-700">
-                                  <FileText className="w-3.5 h-3.5 text-blue-600" />
-                                  <span className="font-medium truncate max-w-[100px]">{refData.idDocName}</span>
-                                  <button
-                                    onClick={() => {
-                                      if (refData.idDocUrl) {
-                                        setViewingDoc({ url: refData.idDocUrl, title: `ID Document: ${refData.idDocName}` });
-                                      } else {
-                                        alert(`ID Document content not available for older referrals: ${refData.idDocName}`);
-                                      }
-                                    }}
-                                    className="p-0.5 hover:bg-gray-200 rounded text-blue-600"
-                                    title="View ID Full"
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </button>
+                                <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded text-[8px] text-gray-700">
+                                  <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                  <span className="font-medium truncate max-w-[60px]">{refData.idDocName}</span>
                                 </div>
-
-                                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2 py-1.5 rounded-lg text-[10px] text-gray-700">
-                                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span className="font-medium truncate max-w-[100px]">{refData.popDocName}</span>
-                                  <button
-                                    onClick={() => {
-                                      if (refData.popDocUrl) {
-                                        setViewingDoc({ url: refData.popDocUrl, title: `Proof of Payment: ${refData.popDocName}` });
-                                      } else {
-                                        alert(`POP content not available for older referrals: ${refData.popDocName}`);
-                                      }
-                                    }}
-                                    className="p-0.5 hover:bg-gray-200 rounded text-emerald-600"
-                                    title="View POP Full"
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </button>
+                                <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded text-[8px] text-gray-700">
+                                  <CreditCard className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span className="font-medium truncate max-w-[60px]">{refData.popDocName}</span>
                                 </div>
                               </>
                             ) : (
-                              <p className="text-[10px] text-gray-400 italic">Documents not yet submitted</p>
+                              <p className="text-[8px] text-gray-400 italic">No Docs</p>
                             )}
                           </div>
 
                           {refData && (currentEmail === 'timegig2026@gmail.com' || subscriptionState === 'tenant') && (
-                            <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                              <button
-                                onClick={() => handleToggleFreezeReferral(refData.id)}
-                                className={`px-3 py-1.5 font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1 ${
-                                  refData.isFrozen 
-                                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                                title={refData.isFrozen ? 'Unfreeze Account' : 'Freeze Account'}
-                              >
-                                {refData.isFrozen ? <RefreshCw className="w-3.5 h-3.5" /> : <Snowflake className="w-3.5 h-3.5" />}
-                                {refData.isFrozen ? 'Unfreeze' : 'Freeze'}
-                              </button>
+                            <div className="flex items-center gap-1">
                               <button
                                 onClick={() => handleUpdateReferralStatus(refData.id, 'Approved')}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1"
+                                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-[8px] transition-all"
                               >
-                                <CheckCircle className="w-3.5 h-3.5" /> Approve
+                                Appr
                               </button>
                               <button
                                 onClick={() => handleUpdateReferralStatus(refData.id, 'Rejected')}
-                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg text-[10px] shadow-sm transition-all flex items-center gap-1"
+                                className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded text-[8px] transition-all"
                               >
-                                <XCircle className="w-3.5 h-3.5" /> Reject
+                                Rej
                               </button>
                             </div>
                           )}
@@ -3079,7 +3031,8 @@ export default function App() {
                                     const reader = new FileReader();
                                     reader.onload = async (ev) => {
                                       const imageData = ev.target?.result as string;
-                                      const faceOk = await detectFace(imageData);
+                                      // const faceOk = await detectFace(imageData); // Face scan removed
+                                      const faceOk = true;
                                       if (faceOk) {
                                         setSelfieImage(imageData);
                                       }
@@ -3753,7 +3706,8 @@ export default function App() {
                                   const reader = new FileReader();
                                   reader.onload = async (ev) => {
                                     const imageData = ev.target?.result as string;
-                                    const faceOk = await detectFace(imageData);
+                                    // const faceOk = await detectFace(imageData); // Face scan removed
+                                    const faceOk = true;
                                     if (faceOk) {
                                       setSelfieImage(imageData);
                                     }
