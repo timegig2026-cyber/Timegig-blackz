@@ -132,6 +132,14 @@ interface UserAccount {
   isLocked?: boolean;
 }
 
+// Fix Leaflet marker icons for production builds (Vercel etc)
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
 export default function App() {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -149,8 +157,13 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [registeredUsers, setRegisteredUsers] = useState<UserAccount[]>(() => {
-    const saved = localStorage.getItem('registered_users');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('registered_users');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Error parsing registered_users:', e);
+      return [];
+    }
   });
 
   const [currentEmail, setCurrentEmail] = useState<string>(() => {
@@ -164,10 +177,15 @@ export default function App() {
     return localStorage.getItem('last_auth_password') || '';
   });
   const [isOnline, setIsOnline] = useState<boolean>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    return user ? (user.isOnline ?? false) : false;
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      return user ? (user.isOnline ?? false) : false;
+    } catch {
+      return false;
+    }
   });
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [feeUpdated, setFeeUpdated] = useState<boolean>(false);
@@ -211,63 +229,92 @@ export default function App() {
   const [selectedPlan, setSelectedPlan] = useState<'user' | 'tenant'>('user');
 
   const [subscriptionState, setSubscriptionState] = useState<'none' | 'user' | 'tenant'>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    return user ? user.subscriptionState : 'none';
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      return user ? user.subscriptionState : 'none';
+    } catch {
+      return 'none';
+    }
   });
 
   // KYC Uploads & Remembered Documents State
   const [selfieImage, setSelfieImage] = useState<string | null>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    if (!savedEmail) return null;
-    const directSaved = localStorage.getItem(`selfie_image_${savedEmail}`);
-    if (directSaved) return directSaved;
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    if (user?.selfieImage) return user.selfieImage;
-    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
-    const ref = refs.find((r: Referral) => r.email === savedEmail);
-    return ref?.selfieUrl || null;
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      if (!savedEmail) return null;
+      const directSaved = localStorage.getItem(`selfie_image_${savedEmail}`);
+      if (directSaved) return directSaved;
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      if (user?.selfieImage) return user.selfieImage;
+      const savedRefs = localStorage.getItem('referral_list');
+      const refs = savedRefs ? JSON.parse(savedRefs) : [];
+      const ref = refs.find((r: Referral) => r.email === savedEmail);
+      return ref?.selfieUrl || null;
+    } catch {
+      return null;
+    }
   });
 
   const [idDocUrl, setIdDocUrl] = useState<string | null>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    if (!savedEmail) return null;
-    const directSaved = localStorage.getItem(`id_doc_url_${savedEmail}`);
-    if (directSaved) return directSaved;
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    if (user?.idDocUrl) return user.idDocUrl;
-    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
-    const ref = refs.find((r: Referral) => r.email === savedEmail);
-    return ref?.idDocUrl || null;
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      if (!savedEmail) return null;
+      const directSaved = localStorage.getItem(`id_doc_url_${savedEmail}`);
+      if (directSaved) return directSaved;
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      if (user?.idDocUrl) return user.idDocUrl;
+      const savedRefs = localStorage.getItem('referral_list');
+      const refs = savedRefs ? JSON.parse(savedRefs) : [];
+      const ref = refs.find((r: Referral) => r.email === savedEmail);
+      return ref?.idDocUrl || null;
+    } catch {
+      return null;
+    }
   });
 
   const [idDocName, setIdDocName] = useState<string>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    if (!savedEmail) return '';
-    const directSaved = localStorage.getItem(`id_doc_name_${savedEmail}`);
-    if (directSaved) return directSaved;
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    if (user?.idDocName) return user.idDocName;
-    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
-    const ref = refs.find((r: Referral) => r.email === savedEmail);
-    return ref?.idDocName || '';
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      if (!savedEmail) return '';
+      const directSaved = localStorage.getItem(`id_doc_name_${savedEmail}`);
+      if (directSaved) return directSaved;
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      if (user?.idDocName) return user.idDocName;
+      const savedRefs = localStorage.getItem('referral_list');
+      const refs = savedRefs ? JSON.parse(savedRefs) : [];
+      const ref = refs.find((r: Referral) => r.email === savedEmail);
+      return ref?.idDocName || '';
+    } catch {
+      return '';
+    }
   });
 
   const [popDocUrl, setPopDocUrl] = useState<string | null>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    if (!savedEmail) return null;
-    const directSaved = localStorage.getItem(`pop_doc_url_${savedEmail}`);
-    if (directSaved) return directSaved;
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    if (user?.popDocUrl) return user.popDocUrl;
-    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
-    const ref = refs.find((r: Referral) => r.email === savedEmail);
-    return ref?.popDocUrl || null;
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      if (!savedEmail) return null;
+      const directSaved = localStorage.getItem(`pop_doc_url_${savedEmail}`);
+      if (directSaved) return directSaved;
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      if (user?.popDocUrl) return user.popDocUrl;
+      const savedRefs = localStorage.getItem('referral_list');
+      const refs = savedRefs ? JSON.parse(savedRefs) : [];
+      const ref = refs.find((r: Referral) => r.email === savedEmail);
+      return ref?.popDocUrl || null;
+    } catch {
+      return null;
+    }
   });
 
   const [popDocName, setPopDocName] = useState<string>(() => {
@@ -297,8 +344,12 @@ export default function App() {
 
   // Referrals List for Tenant review
   const [referrals, setReferrals] = useState<Referral[]>(() => {
-    const saved = localStorage.getItem('referral_list');
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem('referral_list');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Error parsing referral_list:', e);
+    }
     return [];
   });
 
@@ -835,9 +886,13 @@ export default function App() {
 
   // Effect to initialize map
   useEffect(() => {
+    let map: L.Map | null = null;
+    let watchId: number | null = null;
+
     if (authMode !== 'authenticated') {
       if (!authMapContainerRef.current) return;
-      const map = L.map(authMapContainerRef.current, {
+      
+      map = L.map(authMapContainerRef.current, {
         zoomControl: false,
         attributionControl: false,
         preferCanvas: true,
@@ -851,23 +906,25 @@ export default function App() {
       }).addTo(map);
 
       setTimeout(() => {
-        if (authMapContainerRef.current) {
-          map.invalidateSize();
-        }
-      }, 100);
+        map?.invalidateSize();
+      }, 250);
 
-      return () => {
-        map.remove();
-      };
     } else {
       if (!mapContainerRef.current) return;
 
-      const savedCenter = localStorage.getItem('map_center');
-      const savedZoom = localStorage.getItem('map_zoom');
-      const initialCenter = savedCenter ? JSON.parse(savedCenter) : [20, 0];
-      const initialZoom = savedZoom ? parseInt(savedZoom, 10) : 2;
+      let initialCenter: [number, number] = [20, 0];
+      let initialZoom = 2;
+      
+      try {
+        const savedCenter = localStorage.getItem('map_center');
+        const savedZoom = localStorage.getItem('map_zoom');
+        if (savedCenter) initialCenter = JSON.parse(savedCenter);
+        if (savedZoom) initialZoom = parseInt(savedZoom, 10);
+      } catch (e) {
+        console.error('Error parsing map state:', e);
+      }
 
-      const map = L.map(mapContainerRef.current, {
+      map = L.map(mapContainerRef.current, {
         zoomControl: false,
         preferCanvas: true,
       }).setView(initialCenter, initialZoom);
@@ -889,14 +946,17 @@ export default function App() {
       });
 
       map.on('moveend', () => {
+        if (!map) return;
         const center = map.getCenter();
         localStorage.setItem('map_center', JSON.stringify([center.lat, center.lng]));
       });
 
       map.on('zoomend', () => {
+        if (!map) return;
         localStorage.setItem('map_zoom', map.getZoom().toString());
       });
 
+      const savedCenter = localStorage.getItem('map_center');
       if (!savedCenter) {
         startGeolocation(map);
       } else {
@@ -904,17 +964,19 @@ export default function App() {
       }
 
       setTimeout(() => {
-        map.invalidateSize();
-      }, 100);
-
-      return () => {
-        if (watchId !== null) {
-          navigator.geolocation.clearWatch(watchId);
-        }
-        map.remove();
-        mapRef.current = null;
-      };
+        map?.invalidateSize();
+      }, 250);
     }
+
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (map) {
+        map.remove();
+      }
+      mapRef.current = null;
+    };
   }, [authMode]);
 
   // Effect to manage markers for seekers and gigs
@@ -1481,6 +1543,10 @@ export default function App() {
     }
     if (!editReferences || editReferences.length === 0) {
       alert('At least one reference is required.');
+      return;
+    }
+    if (!selfieImage) {
+      alert('A profile picture (selfie) is required for account visibility.');
       return;
     }
 
@@ -2843,6 +2909,19 @@ export default function App() {
                   <p className="text-sm font-semibold text-blue-600">
                     {subscriptionState === 'tenant' ? 'Tenant Sub (Active)' : subscriptionState === 'user' ? 'User Sub (Active)' : 'Not Activated'}
                   </p>
+                  {!selfieImage && (
+                    <div className="mt-2 space-y-2">
+                      <p className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg animate-pulse flex items-center justify-center sm:justify-start gap-1">
+                        <AlertCircle className="w-3 h-3" /> Profile Picture Missing! Please update to be visible.
+                      </p>
+                      <button
+                        onClick={() => setIsEditingProfile(true)}
+                        className="w-full sm:w-auto px-4 py-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-lg shadow-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <Camera className="w-3.5 h-3.5" /> Upload Selfie Now
+                      </button>
+                    </div>
+                  )}
                   {locationName && (
                     <p className="text-sm text-gray-500 flex items-center justify-center sm:justify-start gap-1 mt-1 font-medium">
                       <MapPin className="w-4 h-4 text-blue-600" /> {locationName}
@@ -2906,6 +2985,62 @@ export default function App() {
                           placeholder="e.g. Doe"
                           className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                         />
+                      </div>
+                    </div>
+
+                    {/* Selfie Update Section in Profile Edit */}
+                    <div className="p-4 bg-blue-50/50 rounded-2xl border-2 border-dashed border-blue-200">
+                      <label className="block text-[10px] font-bold text-blue-600 uppercase mb-3 text-center">Update Profile Picture (Selfie)</label>
+                      <div className="flex flex-col items-center gap-4">
+                        {selfieImage ? (
+                          <div className="relative w-24 h-24 rounded-xl overflow-hidden shadow-md group">
+                            <img src={selfieImage} alt="Preview" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setSelfieImage(null)}
+                              className="absolute top-1 right-1 bg-black/60 text-white p-1 rounded-full hover:bg-black transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+                            <button
+                              type="button"
+                              onClick={startCamera}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-2"
+                            >
+                              <Camera className="w-3.5 h-3.5" /> Take Photo
+                            </button>
+                            <label className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-xl text-[10px] font-bold flex items-center justify-center gap-2 cursor-pointer">
+                              <Upload className="w-3.5 h-3.5" /> Upload File
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => setSelfieImage(ev.target?.result as string);
+                                    reader.readAsDataURL(e.target.files[0]);
+                                  }
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        )}
+                        {isCameraActive && !selfieImage && (
+                          <div className="relative w-full max-w-[240px] rounded-xl overflow-hidden bg-black aspect-video">
+                            <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline />
+                            <button
+                              type="button"
+                              onClick={capturePhoto}
+                              className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-blue-600 text-white rounded-full font-bold text-[10px]"
+                            >
+                              Capture
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
