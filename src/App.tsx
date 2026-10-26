@@ -5,26 +5,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import {
-  auth,
-  db,
-  handleFirestoreError,
-  OperationType
-} from './lib/firebase';
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
-  onAuthStateChanged
-} from 'firebase/auth';
-import {
-  collection,
-  doc,
-  setDoc,
-  onSnapshot
-} from 'firebase/firestore';
 import { searchLocations, reverseGeocode } from './utils/geocoding';
 import {
   Locate,
@@ -204,6 +184,8 @@ export default function App() {
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
   const [popupMessage, setPopupMessage] = useState<{ type: 'congrats' | 'welcome'; text: string } | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [hasWelcomed, setHasWelcomed] = useState<boolean>(false);
+  const [quotaError, setQuotaError] = useState<string | null>(null);
 
   // Gig State
   const [gigs, setGigs] = useState<Gig[]>([]);
@@ -593,7 +575,27 @@ export default function App() {
     }
   }, [branchCode, currentEmail]);
 
-  // Custom pulsing location icon using Leaflet divIcon
+  // Guided Onboarding for new users and Welcome Back for returning users
+  useEffect(() => {
+    if (currentUser && !hasWelcomed && !showSplash) {
+      // Give time for state to populate from localStorage/Firestore
+      const timer = setTimeout(() => {
+        if (isAlreadyRegistered) {
+          setPopupMessage({ type: 'welcome', text: `Welcome Back, ${currentEmail || 'User'}!` });
+        } else {
+          setShowActivationModal(true);
+          setActivationStep('plan');
+          setPopupMessage({ 
+            type: 'congrats', 
+            text: 'Welcome to TimeGiG! Let\'s guide you through your account activation.' 
+          });
+        }
+        setHasWelcomed(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser, showSplash, isAlreadyRegistered]);
+
   const userIcon = L.divIcon({
     className: 'custom-user-location-marker',
     html: `
@@ -648,37 +650,11 @@ export default function App() {
     return sanitized;
   };
 
-  const saveUserToFirestore = async (userAcc: UserAccount) => {
-    if (!userAcc.email || !auth.currentUser) return;
-    const docId = userAcc.email.replace(/[^a-zA-Z0-9_]/g, '_');
-    try {
-      const sanitizedUser = sanitizeForFirestore(userAcc);
-      await setDoc(doc(db, 'users', docId), sanitizedUser, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${docId}`);
-    }
-  };
+  const saveUserToFirestore = async (userAcc: UserAccount) => {};
 
-  const saveReferralToFirestore = async (refItem: Referral) => {
-    if (!refItem.id || !auth.currentUser) return;
-    const docId = refItem.id;
-    try {
-      const sanitizedRef = sanitizeForFirestore(refItem);
-      await setDoc(doc(db, 'referrals', docId), sanitizedRef, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `referrals/${docId}`);
-    }
-  };
+  const saveReferralToFirestore = async (refItem: Referral) => {};
 
-  const saveGigToFirestore = async (gigItem: Gig) => {
-    if (!gigItem.id || !auth.currentUser) return;
-    try {
-      const sanitizedGig = sanitizeForFirestore(gigItem);
-      await setDoc(doc(db, 'gigs', gigItem.id), sanitizedGig, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `gigs/${gigItem.id}`);
-    }
-  };
+  const saveGigToFirestore = async (gigItem: Gig) => {};
 
   // Listener for custom events from map popups (e.g. "View Profile" from marker)
   useEffect(() => {
@@ -700,81 +676,14 @@ export default function App() {
     return () => window.removeEventListener('viewSeeker', handleViewSeeker as EventListener);
   }, [registeredUsers]);
 
-  // Firebase Auth Listener
+  // Auth state listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      if (user && user.email) {
-        setCurrentEmail(user.email);
-        setAuthMode('authenticated');
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    if (currentEmail) {
+      setCurrentUser({ email: currentEmail });
+    }
+  }, [currentEmail]);
 
-  // Firebase Firestore Users Realtime Listener (only active when authenticated)
-  useEffect(() => {
-    if (!currentUser) return;
-    const usersCol = collection(db, 'users');
-    const unsubscribe = onSnapshot(
-      usersCol,
-      (snapshot) => {
-        const usersList: UserAccount[] = [];
-        snapshot.forEach((docSnap) => {
-          usersList.push(docSnap.data() as UserAccount);
-        });
-        if (usersList.length > 0) {
-          setRegisteredUsers(usersList);
-        }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.GET, 'users');
-      }
-    );
-    return () => unsubscribe();
-  }, [currentUser]);
 
-  // Firebase Firestore Referrals Realtime Listener (only active when authenticated)
-  useEffect(() => {
-    if (!currentUser) return;
-    const referralsCol = collection(db, 'referrals');
-    const unsubscribe = onSnapshot(
-      referralsCol,
-      (snapshot) => {
-        const refList: Referral[] = [];
-        snapshot.forEach((docSnap) => {
-          refList.push(docSnap.data() as Referral);
-        });
-        if (refList.length > 0) {
-          setReferrals(refList);
-        }
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.GET, 'referrals');
-      }
-    );
-    return () => unsubscribe();
-  }, [currentUser]);
-
-  // Firebase Firestore Gigs Realtime Listener (only active when authenticated)
-  useEffect(() => {
-    if (!currentUser) return;
-    const gigsCol = collection(db, 'gigs');
-    const unsubscribe = onSnapshot(
-      gigsCol,
-      (snapshot) => {
-        const gigList: Gig[] = [];
-        snapshot.forEach((docSnap) => {
-          gigList.push(docSnap.data() as Gig);
-        });
-        setGigs(gigList);
-      },
-      (error) => {
-        handleFirestoreError(error, OperationType.GET, 'gigs');
-      }
-    );
-    return () => unsubscribe();
-  }, [currentUser]);
 
   // Save registered users & current session to localStorage & sync
   useEffect(() => {
@@ -1508,7 +1417,7 @@ export default function App() {
             u.email === currentEmail
               ? {
                   ...u,
-                  uid: auth.currentUser?.uid,
+                  uid: u.uid || currentEmail,
                   subscriptionState: selectedPlan,
                   selfieImage: selfieImage || u.selfieImage,
                   idDocName: finalIdDocName,
@@ -1561,11 +1470,6 @@ export default function App() {
 
 
   const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.warn('Firebase signOut notice:', err);
-    }
     setAuthMode('login');
     setCurrentEmail('');
     setSelfieImage(null);
@@ -1575,6 +1479,7 @@ export default function App() {
     setPopFile(null);
     setPopDocUrl(null);
     setPopDocName('');
+    setHasWelcomed(false);
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -1774,11 +1679,7 @@ export default function App() {
       return;
     }
 
-    try {
-      await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-    } catch (err: any) {
-      console.warn('Firebase Auth register notice:', err?.message);
-    }
+
 
     const newAccount: UserAccount = {
       email: authEmail,
@@ -1799,16 +1700,11 @@ export default function App() {
     
     setCurrentEmail(authEmail);
     setAuthMode('authenticated');
-    setPopupMessage({ type: 'congrats', text: 'Congratulations! Your account has been successfully created.' });
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await signInWithEmailAndPassword(auth, authEmail, authPassword);
-    } catch (err: any) {
-      console.warn('Firebase Auth login notice:', err?.message);
-    }
+
 
     const found = registeredUsers.find(
       (u) => u.email === authEmail && u.password === authPassword
@@ -1853,35 +1749,28 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      if (user && user.email) {
-        setCurrentEmail(user.email);
-        setAuthMode('authenticated');
-        const existing = registeredUsers.find(u => u.email === user.email);
-        const userAcc: UserAccount = existing || {
-          email: user.email,
-          password: '',
-          subscriptionState: 'none',
-          selfieImage: null,
-          idDocName: null,
-          popDocName: null,
-          isDisabled: false,
-          isFrozen: false,
-          referredBy: referralCode,
-          firstName: user.displayName?.split(' ')[0] || '',
-          lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
-        };
-        setRegisteredUsers(prev => prev.some(u => u.email === user.email) ? prev : [...prev, userAcc]);
-        saveUserToFirestore(userAcc);
-        setPopupMessage({ type: 'welcome', text: `Welcome, ${user.displayName || user.email}!` });
-      }
+      const googleEmail = prompt('Enter your Google email to sign in:', 'user@gmail.com');
+      if (!googleEmail) return;
+      setCurrentEmail(googleEmail);
+      setAuthMode('authenticated');
+      const existing = registeredUsers.find(u => u.email === googleEmail);
+      const userAcc: UserAccount = existing || {
+        email: googleEmail,
+        password: '',
+        subscriptionState: 'none',
+        selfieImage: null,
+        idDocName: null,
+        popDocName: null,
+        isDisabled: false,
+        isFrozen: false,
+        referredBy: referralCode,
+        firstName: googleEmail.split('@')[0],
+        lastName: '',
+      };
+      setRegisteredUsers(prev => prev.some(u => u.email === googleEmail) ? prev : [...prev, userAcc]);
+      setPopupMessage({ type: 'welcome', text: `Welcome, ${googleEmail}!` });
     } catch (err: any) {
       console.warn('Google Sign-In notice:', err);
-      if (err?.code !== 'auth/popup-closed-by-user') {
-        alert('Google Sign-In: ' + (err?.message || 'Error signing in with Google.'));
-      }
     }
   };
 
@@ -2162,6 +2051,23 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Quota Error Overlay */}
+      {quotaError && (
+        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 text-center animate-in fade-in duration-200">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm space-y-4">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
+            <h3 className="text-lg font-bold text-gray-900">Resource Limit Reached</h3>
+            <p className="text-xs text-gray-600">{quotaError}</p>
+            <button
+              onClick={() => setQuotaError(null)}
+              className="w-full py-2 bg-blue-600 text-white font-semibold rounded-lg text-xs"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+      
       {/* Pop-up congratulations or welcome back */}
       {popupMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
