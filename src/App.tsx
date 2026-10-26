@@ -51,7 +51,6 @@ import {
   TrendingUp,
   MapPin,
   Users,
-  RotateCcw,
   Copy,
   Check,
   FileText,
@@ -167,14 +166,26 @@ export default function App() {
   });
 
   const [currentEmail, setCurrentEmail] = useState<string>(() => {
-    return localStorage.getItem('current_email') || '';
+    try {
+      return localStorage.getItem('current_email') || '';
+    } catch {
+      return '';
+    }
   });
 
   const [authEmail, setAuthEmail] = useState<string>(() => {
-    return localStorage.getItem('last_auth_email') || '';
+    try {
+      return localStorage.getItem('last_auth_email') || '';
+    } catch {
+      return '';
+    }
   });
   const [authPassword, setAuthPassword] = useState<string>(() => {
-    return localStorage.getItem('last_auth_password') || '';
+    try {
+      return localStorage.getItem('last_auth_password') || '';
+    } catch {
+      return '';
+    }
   });
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     try {
@@ -318,16 +329,24 @@ export default function App() {
   });
 
   const [popDocName, setPopDocName] = useState<string>(() => {
-    const savedEmail = localStorage.getItem('current_email');
-    if (!savedEmail) return '';
-    const directSaved = localStorage.getItem(`pop_doc_name_${savedEmail}`);
-    if (directSaved) return directSaved;
-    const users = JSON.parse(localStorage.getItem('registered_users') || '[]');
-    const user = users.find((u: UserAccount) => u.email === savedEmail);
-    if (user?.popDocName) return user.popDocName;
-    const refs = JSON.parse(localStorage.getItem('referral_list') || '[]');
-    const ref = refs.find((r: Referral) => r.email === savedEmail);
-    return ref?.popDocName || '';
+    try {
+      const savedEmail = localStorage.getItem('current_email');
+      if (!savedEmail) return '';
+      const directSaved = localStorage.getItem(`pop_doc_name_${savedEmail}`);
+      if (directSaved) return directSaved;
+      
+      const savedUsers = localStorage.getItem('registered_users');
+      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const user = users.find((u: UserAccount) => u.email === savedEmail);
+      if (user?.popDocName) return user.popDocName;
+      
+      const savedRefs = localStorage.getItem('referral_list');
+      const refs = savedRefs ? JSON.parse(savedRefs) : [];
+      const ref = refs.find((r: Referral) => r.email === savedEmail);
+      return ref?.popDocName || '';
+    } catch {
+      return '';
+    }
   });
 
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
@@ -450,7 +469,7 @@ export default function App() {
       title: "Account & Profile",
       sections: [
         { title: "Managing Subscription", content: "Your profile displays your current plan and verification status. You can upgrade or change your subscription at any time using the 'Upgrade' button." },
-        { title: "Account Control", content: "If you need to take a break, you can 'Disable' your account. If you want to start fresh or troubleshoot, use the 'Reset App' button to clear local data." }
+        { title: "Account Control", content: "If you need to take a break, you can 'Disable' your account." }
       ]
     },
     activation: {
@@ -924,10 +943,15 @@ export default function App() {
         console.error('Error parsing map state:', e);
       }
 
-      map = L.map(mapContainerRef.current, {
-        zoomControl: false,
-        preferCanvas: true,
-      }).setView(initialCenter, initialZoom);
+      try {
+        map = L.map(mapContainerRef.current, {
+          zoomControl: false,
+          preferCanvas: true,
+        }).setView(initialCenter, initialZoom);
+      } catch (e) {
+        console.error('Leaflet initialization error:', e);
+        return;
+      }
 
       const initialTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -1479,36 +1503,7 @@ export default function App() {
     }
   };
 
-  const handleResetApp = () => {
-    setSubscriptionState('none');
-    setSelfieImage(null);
-    setIdDocFile(null);
-    setIdDocUrl(null);
-    setIdDocName('');
-    setPopFile(null);
-    setPopDocUrl(null);
-    setPopDocName('');
-    setActiveView('map');
-    setShowActivationModal(false);
-    setActivationStep('plan');
-    setUserSubProfit(0.0);
-    setTenantSubProfit(0.0);
 
-    if (currentEmail) {
-      localStorage.removeItem(`selfie_image_${currentEmail}`);
-      localStorage.removeItem(`id_doc_url_${currentEmail}`);
-      localStorage.removeItem(`id_doc_name_${currentEmail}`);
-      localStorage.removeItem(`pop_doc_url_${currentEmail}`);
-      localStorage.removeItem(`pop_doc_name_${currentEmail}`);
-    }
-    
-    const today = new Date();
-    const thirtyDaysLater = new Date(today);
-    thirtyDaysLater.setDate(today.getDate() + 30);
-    const expiryStr = thirtyDaysLater.toISOString().split('T')[0];
-
-    setReferrals([]);
-  };
 
   const handleLogout = async () => {
     try {
@@ -1605,6 +1600,12 @@ export default function App() {
   };
 
   const handleToggleOnline = () => {
+    if (!isOnline && !selfieImage) {
+      alert('A profile picture (selfie) is required to go online and be visible to others.');
+      setActiveView('profile');
+      setIsEditingProfile(true);
+      return;
+    }
     const newStatus = !isOnline;
     setIsOnline(newStatus);
     
@@ -1849,8 +1850,8 @@ export default function App() {
       {/* GLOBAL BACKGROUND MAP (The Wallpaper) */}
       <div className="fixed inset-0 z-0">
         <div 
-          ref={authMode === 'authenticated' ? mapContainerRef : authMapContainerRef} 
-          className="absolute inset-0 grayscale-[20%]"
+          ref={authMode !== 'authenticated' ? authMapContainerRef : null} 
+          className={`absolute inset-0 grayscale-[20%] ${authMode !== 'authenticated' ? 'block' : 'hidden'}`}
         />
         {/* Blur overlay for non-map views or auth screens */}
         {(authMode !== 'authenticated' || activeView !== 'map') && (
@@ -2132,7 +2133,7 @@ export default function App() {
       {/* Map View (always active in background) */}
       <div
         ref={mapContainerRef}
-        className="absolute inset-0 z-0 bottom-[calc(76px+env(safe-area-inset-bottom))]"
+        className={`absolute inset-0 z-0 bottom-[calc(76px+env(safe-area-inset-bottom))] ${authMode === 'authenticated' ? 'block' : 'hidden'}`}
       />
 
       {/* Top Bar: Search Bar & Status (Shown on map and gigs views) */}
@@ -2178,7 +2179,6 @@ export default function App() {
                     onClick={() => handleSelectLocation(item.lat, item.lon, item.display_name)}
                     className="px-4 py-3 text-xs md:text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-900 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors flex items-start gap-2"
                   >
-                    <Search className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                     <span className="line-clamp-2">{item.display_name}</span>
                   </div>
                 ))}
@@ -2604,8 +2604,9 @@ export default function App() {
                                 title="Click to view full selfie"
                               />
                             ) : (
-                              <div className="w-12 h-12 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center border-2 border-dashed border-gray-300 flex-shrink-0">
-                                <User className="w-6 h-6" />
+                              <div className="w-12 h-12 rounded-xl bg-gray-100 text-gray-400 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 flex-shrink-0">
+                                <User className="w-5 h-5" />
+                                <span className="text-[6px] font-bold uppercase mt-0.5">Missing</span>
                               </div>
                             )}
                             <div>
@@ -2930,13 +2931,7 @@ export default function App() {
                   <p className="text-xs text-gray-400 mt-1">ID & KYC Verified successfully</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setActiveHelp(helpContent.profile)}
-                    className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors shadow-sm"
-                    title="Profile Help"
-                  >
-                    <HelpCircle className="w-5 h-5" />
-                  </button>
+
                   <button
                     onClick={handleLogout}
                     className="p-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-2xl transition-all shadow-sm flex items-center gap-2 font-semibold text-xs"
