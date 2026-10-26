@@ -31,25 +31,25 @@ app.post('/api/detect-face', async (req, res) => {
     }
 
     // Extract base64 data
-    const base64Data = image.split(',')[1];
-    const mimeType = image.split(';')[0].split(':')[1];
+    const base64Match = image.match(/^data:([^;]+);base64,(.+)$/);
+    let base64Data = image;
+    let mimeType = 'image/jpeg';
 
-    const prompt = "Analyze this image. Does it contain a clear, identifiable human face? Return only a JSON object: { \"faceDetected\": boolean, \"reason\": \"string\" }";
+    if (base64Match) {
+      mimeType = base64Match[1];
+      base64Data = base64Match[2];
+    } else if (image.includes(',')) {
+      base64Data = image.split(',')[1];
+      mimeType = image.split(';')[0].split(':')[1] || 'image/jpeg';
+    }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Data,
-            },
-          },
-          { text: prompt },
-        ],
-      },
-      config: {
+    const prompt = "Analyze this image. Does it contain a clear, identifiable human face (front-facing selfie)? Return faceDetected: true only if it is a clear face photo. Do not accept logos, objects, ID documents, or full-body photos. Return a JSON object: { \"faceDetected\": boolean, \"reason\": \"string\" }";
+
+    console.log(`Detecting face with model: gemini-1.5-flash, mimeType: ${mimeType}`);
+
+    const model = ai.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -62,15 +62,31 @@ app.post('/api/detect-face', async (req, res) => {
       },
     });
 
-    const text = response.text;
-    if (!text) {
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: mimeType,
+          data: base64Data,
+        },
+      },
+      prompt,
+    ]);
+
+    const responseText = result.response.text();
+    console.log('AI Response:', responseText);
+
+    if (!responseText) {
       throw new Error('No response from AI');
     }
-    const result = JSON.parse(text);
-    res.json(result);
+    const parsedResult = JSON.parse(responseText);
+    res.json(parsedResult);
   } catch (error: any) {
     console.error('Face detection error:', error);
-    res.status(500).json({ error: 'Failed to analyze image', details: error.message });
+    res.status(500).json({ 
+      error: 'Failed to analyze image', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

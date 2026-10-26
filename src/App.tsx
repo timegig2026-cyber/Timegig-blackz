@@ -102,6 +102,7 @@ interface Gig {
 }
 
 interface UserAccount {
+  uid?: string;
   email: string;
   password: string;
   subscriptionState: 'none' | 'user' | 'tenant';
@@ -707,7 +708,8 @@ export default function App() {
           role: seeker.workingTrade || 'Seeker',
           location: seeker.location || 'Location active',
           rating: '5.0',
-          email: seeker.email
+          email: seeker.email,
+          selfieImage: seeker.selfieImage
         });
       }
     };
@@ -1042,11 +1044,36 @@ export default function App() {
         const marker = L.marker([user.lat, user.lng], {
           icon: L.divIcon({
             className: 'seeker-marker',
-            html: `
-              <div style="background: #10b981; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.3);"></div>
+            html: user.selfieImage ? `
+              <div style="
+                width: 36px; 
+                height: 36px; 
+                border-radius: 10px; 
+                border: 2px solid #10b981; 
+                overflow: hidden; 
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                background: white;
+                animation: marker-pop 0.3s ease-out;
+              ">
+                <img src="${user.selfieImage}" style="width: 100%; height: 100%; object-fit: cover;" />
+              </div>
+            ` : `
+              <div style="
+                width: 28px; 
+                height: 28px; 
+                background: #ef4444; 
+                border-radius: 50%; 
+                border: 2px solid white; 
+                box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              ">
+                <span style="color: white; font-size: 14px; font-weight: bold;">!</span>
+              </div>
             `,
-            iconSize: [12, 12],
-            iconAnchor: [6, 6]
+            iconSize: [36, 36],
+            iconAnchor: [18, 18]
           })
         }).addTo(mapRef.current!);
         
@@ -1369,7 +1396,7 @@ export default function App() {
     }
 
     if (!selfieImage) {
-      alert('Please provide your face selfie picture.');
+      alert('A clear face-only profile picture (selfie) is required to complete account activation. Logos, objects, or ID documents are not accepted.');
       return;
     }
     if (!idDocFile && !idDocUrl) {
@@ -1484,6 +1511,7 @@ export default function App() {
             u.email === currentEmail
               ? {
                   ...u,
+                  uid: auth.currentUser?.uid,
                   subscriptionState: selectedPlan,
                   selfieImage: selfieImage || u.selfieImage,
                   idDocName: finalIdDocName,
@@ -2296,8 +2324,9 @@ export default function App() {
                 {selfieImage ? (
                   <img src={selfieImage} alt="Tenant Avatar" className="w-10 h-10 rounded-lg object-cover shadow-sm border-2 border-emerald-500" />
                 ) : (
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base shadow-sm">
-                    TP
+                  <div className="w-10 h-10 rounded-lg bg-red-50 text-red-600 flex flex-col items-center justify-center shadow-sm border border-red-100">
+                    <Camera className="w-4 h-4" />
+                    <span className="text-[6px] font-black uppercase">Missing</span>
                   </div>
                 )}
                 <div>
@@ -2635,9 +2664,9 @@ export default function App() {
                                 title="Click to view full selfie"
                               />
                             ) : (
-                              <div className="w-12 h-12 rounded-xl bg-gray-100 text-gray-400 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 flex-shrink-0">
-                                <User className="w-5 h-5" />
-                                <span className="text-[6px] font-bold uppercase mt-0.5">Missing</span>
+                              <div className="w-12 h-12 rounded-xl bg-red-50 text-red-500 flex flex-col items-center justify-center border-2 border-dashed border-red-100 flex-shrink-0 animate-pulse">
+                                <AlertCircle className="w-5 h-5" />
+                                <span className="text-[6px] font-black uppercase mt-0.5">No Selfie</span>
                               </div>
                             )}
                             <div>
@@ -2831,8 +2860,9 @@ export default function App() {
                   {selfieImage ? (
                     <img src={selfieImage} alt="Your profile" className="w-14 h-14 rounded-2xl object-cover shadow-sm border-2 border-emerald-500" />
                   ) : (
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xl shadow-sm border border-emerald-300">
-                      {editFirstName ? editFirstName[0].toUpperCase() : (currentEmail ? currentEmail[0].toUpperCase() : 'U')}
+                    <div className="w-14 h-14 rounded-2xl bg-red-100 text-red-600 flex flex-col items-center justify-center shadow-sm border-2 border-red-200 animate-pulse">
+                      <Camera className="w-6 h-6 mb-0.5" />
+                      <span className="text-[7px] font-black uppercase leading-none text-center px-1">Photo<br/>Required</span>
                     </div>
                   )}
                   <div>
@@ -2870,8 +2900,8 @@ export default function App() {
                     {seeker.selfieImage ? (
                       <img src={seeker.selfieImage} alt={seeker.firstName} className="w-12 h-12 rounded-xl object-cover shadow-sm" />
                     ) : (
-                      <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                        {seeker.firstName?.[0] || 'U'}
+                      <div className="w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+                        <AlertCircle className="w-6 h-6" />
                       </div>
                     )}
                     <div>
@@ -2924,8 +2954,9 @@ export default function App() {
                   {selfieImage ? (
                     <img src={selfieImage} alt="User Profile Logo" className="w-24 h-24 rounded-2xl object-cover shadow-md border-2 border-blue-500 flex-shrink-0" />
                   ) : (
-                    <div className="w-24 h-24 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-3xl shadow-md flex-shrink-0">
-                      {editFirstName ? editFirstName[0].toUpperCase() : 'U'}
+                    <div className="w-24 h-24 rounded-2xl bg-red-50 text-red-500 flex flex-col items-center justify-center shadow-md flex-shrink-0 border-2 border-red-200 border-dashed animate-pulse">
+                      <Camera className="w-8 h-8 mb-1" />
+                      <span className="text-[9px] font-black uppercase text-center leading-tight">Face Selfie<br/>Required</span>
                     </div>
                   )}
                   <div className="text-center">
@@ -3669,7 +3700,7 @@ export default function App() {
                   {/* Selfie Upload / Capture */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-800 mb-2 flex items-center justify-between">
-                      <span>1. Face Selfie Picture <span className="text-red-500">*</span></span>
+                      <span>1. Face-Only Profile Picture (Selfie) <span className="text-red-500">*</span></span>
                       {selfieImage && <span className="text-xs text-emerald-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Attached</span>}
                     </label>
                     <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-2xl p-4 bg-gray-50">
@@ -4004,9 +4035,13 @@ export default function App() {
               <X className="w-5 h-5"/>
             </button>
             <div className="flex flex-col items-center">
-              <div className="w-24 h-24 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-3xl shadow-md">
-                {viewingSeekerProfile.name.split(' ').map((n: string) => n[0]).join('')}
-              </div>
+              {viewingSeekerProfile.selfieImage ? (
+                <img src={viewingSeekerProfile.selfieImage} alt={viewingSeekerProfile.name} className="w-24 h-24 rounded-2xl object-cover shadow-md border-2 border-blue-500" />
+              ) : (
+                <div className="w-24 h-24 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center shadow-md border-2 border-red-100">
+                  <AlertCircle className="w-10 h-10" />
+                </div>
+              )}
               <h2 className="text-xl font-bold mt-4 text-gray-900">{viewingSeekerProfile.name}</h2>
               <p className="text-gray-500 text-sm">{viewingSeekerProfile.role}</p>
               <p className="text-gray-400 text-xs mt-1">{viewingSeekerProfile.location}</p>
