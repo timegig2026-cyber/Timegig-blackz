@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "User profile and authentication account details",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "subscriptionState": { "type": "string", "enum": ["none", "user", "tenant"] },
+        "selfieImage": { "type": "string", "maxLength": 500000 },
+        "idDocName": { "type": "string", "maxLength": 256 },
+        "popDocName": { "type": "string", "maxLength": 256 },
+        "isDisabled": { "type": "boolean" },
+        "isFrozen": { "type": "boolean" },
+        "referredBy": { "type": "string", "maxLength": 128 },
+        "firstName": { "type": "string", "maxLength": 100 },
+        "lastName": { "type": "string", "maxLength": 100 },
+        "dob": { "type": "string", "maxLength": 20 },
+        "contact": { "type": "string", "maxLength": 50 },
+        "location": { "type": "string", "maxLength": 200 },
+        "educationLevel": { "type": "string", "maxLength": 100 },
+        "workingTrade": { "type": "string", "maxLength": 100 },
+        "workingTrades": { "type": "array" },
+        "gigCategories": { "type": "array" },
+        "experience": { "type": "array" },
+        "references": { "type": "array" },
+        "profileLastUpdated": { "type": "string", "maxLength": 50 },
+        "isLocked": { "type": "boolean" }
+      },
+      "required": ["email", "subscriptionState"]
+    },
+    "referral": {
+      "title": "Referral",
+      "description": "Referral record submitted by a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "selfieUrl": { "type": "string", "maxLength": 500000 },
+        "idDocName": { "type": "string", "maxLength": 256 },
+        "idDocUrl": { "type": "string", "maxLength": 500000 },
+        "popDocName": { "type": "string", "maxLength": 256 },
+        "popDocUrl": { "type": "string", "maxLength": 500000 },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "date": { "type": "string", "maxLength": 50 },
+        "activatedPlan": { "type": "string", "enum": ["user", "tenant"] },
+        "expiryDate": { "type": "string", "maxLength": 50 },
+        "isFrozen": { "type": "boolean" },
+        "referrerEmail": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["email", "status", "activatedPlan", "referrerEmail"]
+    },
+    "setting": {
+      "title": "Setting",
+      "description": "Tenant network settings and bank details",
+      "type": "object",
+      "properties": {
+        "tenantEmail": { "type": "string", "maxLength": 128 },
+        "userSubFee": { "type": "number" },
+        "tenantSubFee": { "type": "number" },
+        "trialDays": { "type": "number" },
+        "bankName": { "type": "string", "maxLength": 100 },
+        "accountHolder": { "type": "string", "maxLength": 100 },
+        "accountNumber": { "type": "string", "maxLength": 50 },
+        "branchCode": { "type": "string", "maxLength": 20 }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "#/entities/user",
+      "description": "User profiles indexed by User ID or Email hash"
+    },
+    "/referrals/{referralId}": {
+      "schema": "#/entities/referral",
+      "description": "Referral claims and approvals"
+    },
+    "/settings/{settingId}": {
+      "schema": "#/entities/setting",
+      "description": "Tenant bank and pricing preferences"
+    }
+  }
+}
