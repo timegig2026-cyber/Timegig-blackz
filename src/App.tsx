@@ -427,6 +427,32 @@ export default function App() {
   const [editExperience, setEditExperience] = useState<string[]>([]);
   const [editReferences, setEditReferences] = useState<string[]>([]);
 
+  const [isScanningFace, setIsScanningFace] = useState<boolean>(false);
+
+  const detectFace = async (imageData: string): Promise<boolean> => {
+    setIsScanningFace(true);
+    try {
+      const response = await fetch('/api/detect-face', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData }),
+      });
+      const data = await response.json();
+      if (data.faceDetected) {
+        return true;
+      } else {
+        alert(`Face not detected: ${data.reason || 'Please provide a clear face selfie.'}`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Face detection error:', error);
+      alert('Failed to verify face. Please try again.');
+      return false;
+    } finally {
+      setIsScanningFace(false);
+    }
+  };
+
   // Document viewer state
   const [viewingDoc, setViewingDoc] = useState<{ url: string; title: string } | null>(null);
   const [viewingSeekerProfile, setViewingSeekerProfile] = useState<any | null>(null);
@@ -1302,7 +1328,7 @@ export default function App() {
     }
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current) {
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth || 640;
@@ -1311,8 +1337,12 @@ export default function App() {
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg');
-        setSelfieImage(dataUrl);
-        stopCamera();
+        
+        const faceOk = await detectFace(dataUrl);
+        if (faceOk) {
+          setSelfieImage(dataUrl);
+          stopCamera();
+        }
       }
     }
   };
@@ -1846,6 +1876,7 @@ export default function App() {
 
   // Main Return Block
   return (
+    <>
     <div className="relative w-full h-[100dvh] overflow-hidden bg-white">
       {/* GLOBAL BACKGROUND MAP (The Wallpaper) */}
       <div className="fixed inset-0 z-0">
@@ -3012,10 +3043,16 @@ export default function App() {
                               <input
                                 type="file"
                                 accept="image/*"
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                   if (e.target.files && e.target.files[0]) {
                                     const reader = new FileReader();
-                                    reader.onload = (ev) => setSelfieImage(ev.target?.result as string);
+                                    reader.onload = async (ev) => {
+                                      const imageData = ev.target?.result as string;
+                                      const faceOk = await detectFace(imageData);
+                                      if (faceOk) {
+                                        setSelfieImage(imageData);
+                                      }
+                                    };
                                     reader.readAsDataURL(e.target.files[0]);
                                   }
                                 }}
@@ -3680,10 +3717,16 @@ export default function App() {
                             <input
                               type="file"
                               accept="image/*"
-                              onChange={(e) => {
+                              onChange={async (e) => {
                                 if (e.target.files && e.target.files[0]) {
                                   const reader = new FileReader();
-                                  reader.onload = (ev) => setSelfieImage(ev.target?.result as string);
+                                  reader.onload = async (ev) => {
+                                    const imageData = ev.target?.result as string;
+                                    const faceOk = await detectFace(imageData);
+                                    if (faceOk) {
+                                      setSelfieImage(imageData);
+                                    }
+                                  };
                                   reader.readAsDataURL(e.target.files[0]);
                                 }
                               }}
@@ -4147,5 +4190,15 @@ export default function App() {
       )}
     </div>
   </div>
+
+  {/* Face Scanning Loader Overlay */}
+  {isScanningFace && (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm text-white p-6">
+      <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p className="text-lg font-bold">Scanning for face...</p>
+      <p className="text-sm text-gray-300 mt-2 text-center max-w-xs">Our AI is verifying your selfie. This ensures platform security and transparency.</p>
+    </div>
+  )}
+  </>
   );
 }
